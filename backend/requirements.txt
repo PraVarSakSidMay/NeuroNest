@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+python-multipart
+openai
+python-dotenv
+pandas
+requests
+librosa
+opensmile
+google-generativeai
+groq
+elevenlabs
+deepgram-sdk
+cartesia
