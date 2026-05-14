@@ -1,16 +1,10 @@
-from groq import Groq, RateLimitError
-from dotenv import load_dotenv
-
-load_dotenv()
-client = Groq()
+from .model_manager import model_manager
 
 def generate_response(transcript, emotion_data):
 
     emotion = emotion_data.get("emotion", "").lower()
     stress_level = emotion_data.get("stress_level", 0)
-    contradiction = emotion_data.get("contradiction_detected", False)
-    hidden_emotion = emotion_data.get("hidden_emotion", "")
-
+    
     # Determine if we should inject warmth + light humor to de-escalate
     negative_emotions = ["anger", "angry", "sad", "sadness", "anxiety", "anxious", "distressed", "fear", "worried", "frustrated", "upset", "denial"]
     is_negative = any(e in emotion for e in negative_emotions) or stress_level > 60
@@ -23,7 +17,6 @@ def generate_response(transcript, emotion_data):
     - Sprinkle in ONE small, gentle, non-offensive joke or playful remark to make them smile. Keep it tasteful and kind.
     - Never be dismissive. Acknowledge their pain first, then lift their spirits.
     - End on an uplifting, hopeful note that leaves them feeling lighter.
-    - Example style: "Hey, even the sun hides behind clouds sometimes — but it always comes back out. And so will you. 🌤️"
     """
     else:
         tone_instruction = """
@@ -47,23 +40,5 @@ def generate_response(transcript, emotion_data):
     5. Never sound like a chatbot. Sound like someone who genuinely cares.
     """
 
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": transcript
-                }
-            ]
-        )
-
-        return response.choices[0].message.content
-    except RateLimitError:
-        print("WARNING: Groq Quota Exceeded. Using mock response fallback for Hackathon.")
-        return "I hear you saying that you're fine, but your voice tells me you might be hurting. It's completely okay to not be okay. I'm here for you, and this is a safe space if you want to talk about it."
+    return model_manager.get_llm_response(transcript, system_prompt)
 

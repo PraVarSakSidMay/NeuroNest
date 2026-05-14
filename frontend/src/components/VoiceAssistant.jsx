@@ -154,11 +154,38 @@ export default function VoiceAssistant() {
     const [error, setError] = useState('')
     const [requests, setRequests] = useState(0)
     const [isSpeaking, setIsSpeaking] = useState(false)
+    const [selectedVoice, setSelectedVoice] = useState('Rachel')
+    const [previewLoading, setPreviewLoading] = useState(false)
+
+    const voices = [
+        { name: 'Amelia', gender: 'female', icon: '👩‍💼' },
+        { name: 'Rachel', gender: 'female', icon: '👩' },
+        { name: 'Josh', gender: 'male', icon: '🧔' },
+        { name: 'Nathan', gender: 'male', icon: '👨' },
+        { name: 'Sam', gender: 'male', icon: '🧑' },
+    ]
 
     useEffect(() => {
         const usage = getUsageData()
         setRequests(usage.requests || 0)
     }, [])
+
+    // ── Preview Voice ──
+    const previewVoice = async () => {
+        setPreviewLoading(true)
+        try {
+            const formData = new FormData()
+            formData.append('voice_name', selectedVoice)
+            const res = await axios.post('http://localhost:8000/preview-voice', formData)
+            if (res.data.audio_url) {
+                const audio = new Audio(res.data.audio_url)
+                audio.play()
+            }
+        } catch (err) {
+            console.error("Preview failed", err)
+        }
+        setPreviewLoading(false)
+    }
 
     // ── Web Speech API TTS — browser fallback ──
     const speakResponse = (text) => {
@@ -225,6 +252,7 @@ export default function VoiceAssistant() {
                 if (audioFeaturesRef.current) {
                     formData.append('audio_analysis', JSON.stringify(audioFeaturesRef.current))
                 }
+                formData.append('voice_name', selectedVoice)
 
                 setLoading(true)
                 setError('')
@@ -302,6 +330,49 @@ export default function VoiceAssistant() {
 
                 {/* Credits Bar */}
                 <CreditsBar requests={requests} />
+
+                {/* Voice Selection Dropdown */}
+                <div className="relative z-10 mb-8 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50">
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1">
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-indigo-400 mb-1.5 ml-1">
+                                Choose AI Voice Model
+                            </label>
+                            <div className="relative">
+                                <select 
+                                    value={selectedVoice}
+                                    onChange={(e) => setSelectedVoice(e.target.value)}
+                                    className="w-full bg-white border border-indigo-200 text-indigo-900 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block p-3 shadow-sm appearance-none cursor-pointer hover:border-indigo-300 transition-colors"
+                                >
+                                    {voices.map(v => (
+                                        <option key={v.name} value={v.name}>
+                                            {v.icon} {v.name} ({v.gender})
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-indigo-400">
+                                    <Zap size={14} />
+                                </div>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={previewVoice}
+                            disabled={previewLoading}
+                            className={`mt-5 px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-all flex items-center gap-2 shadow-sm
+                                ${previewLoading 
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                                    : 'bg-white text-indigo-600 border border-indigo-100 hover:bg-indigo-50 hover:scale-105 active:scale-95'
+                                }`}
+                        >
+                            {previewLoading ? (
+                                <Activity className="w-3 h-3 animate-spin" />
+                            ) : (
+                                <Sparkles className="w-3 h-3" />
+                            )}
+                            Preview
+                        </button>
+                    </div>
+                </div>
 
                 {/* Mic Button */}
                 <div className="flex justify-center mb-8 relative z-10">

@@ -1,9 +1,5 @@
-from groq import Groq, RateLimitError
 import json
-from dotenv import load_dotenv
-
-load_dotenv()
-client = Groq()
+from .model_manager import model_manager
 
 def analyze_emotion(transcript, audio_features):
 
@@ -27,28 +23,23 @@ def analyze_emotion(transcript, audio_features):
     }}
     """
 
+    content = model_manager.get_llm_response(transcript, prompt, json_mode=True)
+    
     try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        )
-
-        content = response.choices[0].message.content
-
+        # Clean up code blocks if model returns them
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+            
         return json.loads(content)
-    except RateLimitError:
-        print("WARNING: Groq Quota Exceeded. Using mock emotion analysis fallback for Hackathon.")
+    except Exception as e:
+        print(f"Error parsing emotion JSON: {e}. Raw content: {content}")
         return {
-            "emotion": "distressed",
-            "stress_level": 85,
-            "tone": "trembling",
-            "contradiction_detected": True,
-            "hidden_emotion": "hiding sadness or fear"
+            "emotion": "neutral",
+            "stress_level": 50,
+            "tone": "unknown",
+            "contradiction_detected": False,
+            "hidden_emotion": ""
         }
 

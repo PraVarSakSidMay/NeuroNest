@@ -1,13 +1,4 @@
-"""
-Audio Feature Extraction
-========================
-Priority chain:
-  1. Real browser Web Audio API features (from frontend) — always accurate
-  2. openSMILE local analysis — if mediainfo/ffmpeg available
-  3. librosa analysis — Python-only fallback
-  4. Mock features — last resort, clearly flagged
-"""
-
+from core.logger import logger
 import opensmile
 import os
 
@@ -18,12 +9,8 @@ smile = opensmile.Smile(
 
 def extract_audio_features(audio_path: str, frontend_features: dict = None) -> dict:
 
-    # ── Priority 1: Real browser-measured features ─────────────────────
-    # The frontend uses Web Audio API to measure pitch, volume, trembling,
-    # crying patterns, and singing patterns in real time. This is the most
-    # accurate representation of the actual voice state.
     if frontend_features and isinstance(frontend_features, dict):
-        print(f"Audio: Using real browser Web Audio API features. Voice: {frontend_features.get('voice_description', 'N/A')}")
+        logger.info(f"Audio: Using real browser Web Audio API features. Voice: {frontend_features.get('voice_description', 'N/A')}")
         return {
             "pitch_mean": frontend_features.get("pitch_mean", 60.5),
             "jitter": frontend_features.get("jitter", 0.05),
@@ -38,13 +25,12 @@ def extract_audio_features(audio_path: str, frontend_features: dict = None) -> d
             "source": "browser_web_audio_api"
         }
 
-    # ── Priority 2: openSMILE local analysis ───────────────────────────
     try:
         features = smile.process_file(audio_path)
         pitch = float(features["F0semitoneFrom27.5Hz_sma3nz_amean"][0])
         jitter = float(features["jitterLocal_sma3nz_amean"][0])
         loudness = float(features["loudness_sma3_amean"][0])
-        print("Audio: openSMILE features extracted successfully")
+        logger.info("Audio: openSMILE features extracted successfully")
         return {
             "pitch_mean": pitch,
             "jitter": jitter,
@@ -59,9 +45,8 @@ def extract_audio_features(audio_path: str, frontend_features: dict = None) -> d
             "source": "opensmile"
         }
     except Exception as e:
-        print(f"Audio: openSMILE unavailable ({type(e).__name__}), trying librosa...")
+        logger.warning(f"Audio: openSMILE unavailable ({type(e).__name__}), trying librosa...")
 
-    # ── Priority 3: librosa Python analysis ────────────────────────────
     try:
         import librosa
         import numpy as np
@@ -72,8 +57,8 @@ def extract_audio_features(audio_path: str, frontend_features: dict = None) -> d
         pitch_values = pitches[magnitudes > np.max(magnitudes) * 0.1]
         pitch_mean = float(np.mean(pitch_values)) if len(pitch_values) > 0 else 60.0
         pitch_std = float(np.std(pitch_values)) if len(pitch_values) > 0 else 0.0
-        jitter_est = zcr  # zero crossing rate is a rough jitter proxy
-        print("Audio: librosa features extracted successfully")
+        jitter_est = zcr 
+        logger.info("Audio: librosa features extracted successfully")
         return {
             "pitch_mean": round(pitch_mean, 2),
             "jitter": round(jitter_est, 4),
@@ -88,10 +73,9 @@ def extract_audio_features(audio_path: str, frontend_features: dict = None) -> d
             "source": "librosa"
         }
     except Exception as e:
-        print(f"Audio: librosa failed ({type(e).__name__}), using mock features")
+        logger.error(f"Audio: librosa failed ({type(e).__name__}), using mock features")
 
-    # ── Priority 4: Mock fallback ───────────────────────────────────────
-    print("Audio: WARNING — using mock features. Install mediainfo for real analysis.")
+    logger.warning("Audio: WARNING — using mock features. Install mediainfo for real analysis.")
     return {
         "pitch_mean": 60.5,
         "jitter": 0.05,
@@ -105,7 +89,6 @@ def extract_audio_features(audio_path: str, frontend_features: dict = None) -> d
         "voice_description": "voice analysis unavailable — using defaults",
         "source": "mock"
     }
-
 
 def _describe(pitch, jitter, loudness) -> str:
     parts = []

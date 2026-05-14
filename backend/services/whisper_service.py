@@ -1,14 +1,4 @@
-from groq import Groq
-from dotenv import load_dotenv
-
-load_dotenv()
-client = Groq()
+from .model_manager import model_manager
 
 def transcribe_audio(audio_path: str):
-    with open(audio_path, "rb") as audio_file:
-        transcription = client.audio.transcriptions.create(
-            model="whisper-large-v3",
-            file=audio_file
-        )
-
-    return transcription.text
+    return model_manager.get_transcription(audio_path)
