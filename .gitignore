@@ -1,0 +1,26 @@
+# Dependencies
+frontend/node_modules/
+backend/__pycache__/
+backend/*.pyc
+backend/.venv/
+backend/venv/
+
+# Next.js build output
+frontend/.next/
+
+# Environment files — NEVER commit these
+frontend/.env.local
+frontend/.env
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+*.swp
+
+# Zip files
+*.zip
