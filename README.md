@@ -14,6 +14,8 @@ Unlike regular voice assistants, NeuroNest detects **contradiction** between you
 
 If you're **angry, sad, stressed, or anxious**, it responds with warmth and a gentle touch of humor to lift your spirits — like a mom who makes you smile even when you're crying.
 
+- **Personalised Memory (RAG)**: It remembers your past conversations and emotional journey using Supabase pgvector, allowing it to reference previous sessions naturally and greet you based on how you were feeling last time.
+
 ---
 
 ## 🏗️ Architecture & Pipeline
@@ -446,8 +448,12 @@ VoiceAssistant/
 │   │   ├── emotion_service.py     # LLM-based emotion analysis → JSON
 │   │   ├── response_service.py    # LLM-based empathetic response generation
 │   │   ├── tts_service.py         # TTS waterfall with rate-limit failover ⭐
+│   │   ├── rag_service.py         # Personalized memory (OpenAI embeddings + pgvector) ⭐
 │   │   └── dashboard_service.py   # In-memory session history
 │   │
+│   ├── debug_deepgram.py          # Diagnostic for Deepgram Aura-2
+│   ├── test_rag_rpc.py            # Diagnostic for Supabase RAG functions
+│   ├── test_tts_voices.py         # Comprehensive TTS waterfall stress test
 │   ├── generated/                 # TTS output MP3 files (auto-created)
 │   └── uploads/                   # Temporary audio uploads (auto-created)
 │
@@ -463,7 +469,8 @@ VoiceAssistant/
 │
 └── supabase/
     └── migrations/
-        └── 20260513_init.sql      # Database schema
+        ├── 20260513_init.sql      # Database schema
+        └── 20260515_rag.sql       # RAG memory & pgvector schema
 ```
 
 ---
@@ -474,6 +481,7 @@ The React frontend (`VoiceAssistant.jsx`) provides:
 
 - **Mic recording** — one-click record/stop with visual feedback
 - **Real-time audio analysis** — Web Audio API samples voice features every 80ms during recording
+- **Personalised Greetings** — shows a warm welcome based on your last session's emotion ⭐
 - **Voice selector** — choose from 5 AI voice personas with a live preview button
 - **Emotion display** — shows detected emotion, stress level (0–100), tone, and contradiction alerts
 - **AI response display** — shows the text response alongside the audio playback
