@@ -24,3 +24,7 @@ Thumbs.db
 
 # Zip files
 *.zip
+
+# Local development folder — never push this
+varsha-ui/
+varsha-ui.zip
