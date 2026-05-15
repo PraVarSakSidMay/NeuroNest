@@ -2,7 +2,8 @@ from supabase import create_client, Client
 from core.config import settings
 from core.logger import logger
 from models.interaction import InteractionCreate
-from typing import Optional
+from typing import Optional, List
+import json
 
 class InteractionRepository:
     def __init__(self):
@@ -73,5 +74,26 @@ class InteractionRepository:
         except Exception as e:
             logger.error(f"Error uploading to Supabase {bucket}: {e}")
             return None
+
+    # ── RAG methods ────────────────────────────────────────────────────────
+
+    async def store_embedding(self, interaction_id: str, embedding: list) -> bool:
+        """
+        Updates the interactions row with its pgvector embedding.
+        Called asynchronously after the response is returned to the user.
+        """
+        try:
+            self.supabase.table("interactions").update(
+                {"embedding": embedding}
+            ).eq("id", interaction_id).execute()
+            logger.info(f"RAG: Stored embedding for interaction {interaction_id}")
+            return True
+        except Exception as e:
+            logger.error(f"RAG: Failed to store embedding for {interaction_id} — {e}")
+            return False
+
+    def get_supabase_client(self):
+        """Expose the raw Supabase client so services can call RPC functions."""
+        return self.supabase
 
 interaction_repo = InteractionRepository()

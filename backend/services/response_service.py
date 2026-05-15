@@ -1,6 +1,7 @@
 from .model_manager import model_manager
+from .rag_service import rag_service
 
-def generate_response(transcript, emotion_data):
+def generate_response(transcript, emotion_data, memories: list = []):
 
     emotion = emotion_data.get("emotion", "").lower()
     stress_level = emotion_data.get("stress_level", 0)
@@ -23,6 +24,9 @@ def generate_response(transcript, emotion_data):
     TONE INSTRUCTION: The user seems calm or positive. Be warm, encouraging, and conversational.
     """
 
+    # Build the memory context block
+    memory_context = rag_service.format_memories_for_prompt(memories)
+
     system_prompt = f"""
     You are NeuroNest — an emotionally supportive, deeply empathetic, and perceptive wellness AI assistant.
     You speak like a caring, wise, warm mother figure — never clinical, never robotic.
@@ -32,12 +36,15 @@ def generate_response(transcript, emotion_data):
 
     {tone_instruction}
 
+    {memory_context}
+
     Core Instructions:
     1. Speak calmly, warmly, and empathetically.
     2. Avoid medical diagnosis or clinical language.
     3. If 'contradiction_detected' is true, gently acknowledge the 'hidden_emotion'. Let them know it's safe to open up.
     4. Keep the response conversational and human-like. Short enough to be spoken aloud naturally (2-4 sentences).
     5. Never sound like a chatbot. Sound like someone who genuinely cares.
+    6. If memory context is provided, weave in past references naturally when they are relevant — never force it.
     """
 
     return model_manager.get_llm_response(transcript, system_prompt)

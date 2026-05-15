@@ -42,7 +42,7 @@ class _TtsRateLimitTracker:
         expires_at = time.time() + RATE_LIMIT_COOLDOWN_SECONDS
         self._cooldowns[provider] = expires_at
         logger.warning(
-            f"⏳ TTS rate-limit hit on '{provider}'. "
+            f"TTS rate-limit hit on '{provider}'. "
             f"Cooling down for {RATE_LIMIT_COOLDOWN_SECONDS}s "
             f"(until {time.strftime('%H:%M:%S', time.localtime(expires_at))})."
         )
@@ -53,7 +53,7 @@ class _TtsRateLimitTracker:
             return False
         if time.time() < expires_at:
             remaining = int(expires_at - time.time())
-            logger.info(f"⏭️  TTS: Skipping '{provider}' — rate-limited for {remaining}s more.")
+            logger.info(f"TTS: Skipping '{provider}' — rate-limited for {remaining}s more.")
             return True
         del self._cooldowns[provider]
         return False
@@ -143,7 +143,7 @@ def tts_elevenlabs(text: str, filename: str, voice_name: str = "Rachel") -> str 
                 if chunk:
                     f.write(chunk)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: ✅ ElevenLabs ({voice_name})")
+            logger.info(f"TTS: OK ElevenLabs ({voice_name})")
             _tts_rate_tracker.clear("elevenlabs")
             return filename
         if os.path.exists(filename):
@@ -186,7 +186,7 @@ def tts_cartesia(text: str, filename: str, voice_name: str = "Rachel") -> str | 
             else:
                 f.write(audio_response)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: ✅ Cartesia ({voice_name})")
+            logger.info(f"TTS: OK Cartesia ({voice_name})")
             _tts_rate_tracker.clear("cartesia")
             return filename
         if os.path.exists(filename):
@@ -210,24 +210,29 @@ def tts_deepgram(text: str, filename: str, voice_name: str = "Rachel") -> str | 
         return None
     try:
         from deepgram import DeepgramClient
-        try:
-            from deepgram import SpeakOptions
-        except ImportError:
-            try:
-                from deepgram.clients.speak.v1.options import SpeakOptions
-            except ImportError:
-                class SpeakOptions:
-                    def __init__(self, model):
-                        self.model = model
-
-        client = DeepgramClient(settings.DEEPGRAM_API_KEY)
+        
+        client = DeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
         model_id = VOICE_MAPPING.get(voice_name, VOICE_MAPPING["Rachel"])["deepgram"]
-        options = SpeakOptions(model=model_id)
-        client.speak.v("1").save(filename, {"text": text}, options)
+        
+        # In SDK 7.x, the generate method returns an iterator of bytes.
+        # We must specify encoding="mp3" to match our expected file format.
+        audio_iterator = client.speak.v1.audio.generate(
+            text=text,
+            model=model_id,
+            encoding="mp3"
+        )
+        
+        with open(filename, "wb") as f:
+            for chunk in audio_iterator:
+                f.write(chunk)
+                
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: ✅ Deepgram ({voice_name} Aura-2)")
+            logger.info(f"TTS: OK Deepgram ({voice_name} Aura-2)")
             _tts_rate_tracker.clear("deepgram")
             return filename
+        
+        if os.path.exists(filename):
+            os.remove(filename)
         return None
     except Exception as e:
         if _is_rate_limit_error(e):
@@ -256,7 +261,7 @@ def tts_openai(text: str, filename: str, voice_name: str = "Rachel") -> str | No
         )
         response.stream_to_file(filename)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: ✅ OpenAI ({voice_name})")
+            logger.info(f"TTS: OK OpenAI ({voice_name})")
             _tts_rate_tracker.clear("openai_tts")
             return filename
         return None
@@ -294,7 +299,7 @@ def tts_lmnt(text: str, filename: str, voice_name: str = "Rachel") -> str | None
         with open(filename, "wb") as f:
             f.write(response.content)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: ✅ LMNT ({voice_name})")
+            logger.info(f"TTS: OK LMNT ({voice_name})")
             _tts_rate_tracker.clear("lmnt")
             return filename
         if os.path.exists(filename):
@@ -347,7 +352,7 @@ def tts_murf(text: str, filename: str, voice_name: str = "Rachel") -> str | None
         with open(filename, "wb") as f:
             f.write(audio_resp.content)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: ✅ Murf AI ({voice_name})")
+            logger.info(f"TTS: OK Murf AI ({voice_name})")
             _tts_rate_tracker.clear("murf")
             return filename
         if os.path.exists(filename):
@@ -390,5 +395,5 @@ def generate_tts(text: str, emotion: str, voice_name: str = "Rachel") -> str | N
         except Exception as e:
             logger.error(f"TTS Orchestrator: {provider_fn.__name__} crashed unexpectedly: {e}")
 
-    logger.error("TTS: ❌ All providers exhausted or rate-limited. Frontend will use browser TTS.")
+    logger.error("TTS: All providers exhausted or rate-limited. Frontend will use browser TTS.")
     return None

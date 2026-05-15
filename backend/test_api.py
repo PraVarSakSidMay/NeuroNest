@@ -3,7 +3,7 @@ import json
 
 def test_live_api():
     url = "http://localhost:8000/process-voice"
-    file_path = "uploads/1fa3e2e7-e3a0-4429-bcd7-af580bb91e39.webm"
+    file_path = "backend/uploads/1fa3e2e7-e3a0-4429-bcd7-af580bb91e39.webm"
     
     print(f"Testing live API at {url} with file {file_path}...")
     

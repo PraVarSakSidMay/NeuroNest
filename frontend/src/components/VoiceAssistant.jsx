@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import axios from 'axios'
-import { Mic, Square, Activity, Sparkles, BrainCircuit, HeartPulse, Zap } from 'lucide-react'
+import { Mic, Square, Activity, Sparkles, BrainCircuit, HeartPulse, Zap, BookOpen, Brain } from 'lucide-react'
 
 // ─── Credits Tracker ────────────────────────────────────────────────
 const DAILY_REQUEST_LIMIT = 100
@@ -156,6 +156,8 @@ export default function VoiceAssistant() {
     const [isSpeaking, setIsSpeaking] = useState(false)
     const [selectedVoice, setSelectedVoice] = useState('Rachel')
     const [previewLoading, setPreviewLoading] = useState(false)
+    const [sessionGreeting, setSessionGreeting] = useState(null)  // RAG greeting
+    const [memoriesUsed, setMemoriesUsed] = useState(0)           // RAG memory count
 
     const voices = [
         { name: 'Amelia', gender: 'female', icon: '👩‍💼' },
@@ -168,6 +170,20 @@ export default function VoiceAssistant() {
     useEffect(() => {
         const usage = getUsageData()
         setRequests(usage.requests || 0)
+
+        // ── RAG: Fetch session-start greeting on mount ──────────────────────
+        const fetchGreeting = async () => {
+            try {
+                const res = await axios.post('http://localhost:8000/session-start')
+                if (res.data?.greeting) {
+                    setSessionGreeting(res.data.greeting)
+                }
+            } catch (err) {
+                // Greeting is optional — silently fail
+                console.warn('Session greeting unavailable:', err.message)
+            }
+        }
+        fetchGreeting()
     }, [])
 
     // ── Preview Voice ──
@@ -265,6 +281,7 @@ export default function VoiceAssistant() {
                     setTranscript(res.data.transcript)
                     setEmotionData(res.data.emotion)
                     setResponse(res.data.response)
+                    setMemoriesUsed(res.data.memories_used || 0)
 
                     const updated = incrementUsage()
                     setRequests(updated.requests)
@@ -330,6 +347,26 @@ export default function VoiceAssistant() {
 
                 {/* Credits Bar */}
                 <CreditsBar requests={requests} />
+
+                {/* ── RAG Session Greeting ──────────────────────────────── */}
+                {sessionGreeting && (
+                    <div className="relative z-10 mb-6 animate-fade-in">
+                        <div className="flex items-start gap-3 bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-200/70 rounded-2xl p-4 shadow-sm">
+                            <div className="flex-shrink-0 w-9 h-9 bg-gradient-to-br from-violet-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-sm mt-0.5">
+                                <Brain className="w-4 h-4 text-white" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-violet-400 mb-1">NeuroNest remembers</p>
+                                <p className="text-slate-700 text-sm leading-relaxed">{sessionGreeting}</p>
+                            </div>
+                            <button
+                                onClick={() => setSessionGreeting(null)}
+                                className="flex-shrink-0 text-slate-300 hover:text-slate-500 transition-colors text-lg leading-none mt-0.5"
+                                title="Dismiss"
+                            >×</button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Voice Selection Dropdown */}
                 <div className="relative z-10 mb-8 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50">
@@ -471,9 +508,19 @@ export default function VoiceAssistant() {
                         {/* AI Response */}
                         <div className="bg-indigo-50/80 backdrop-blur-md p-6 rounded-2xl border border-indigo-200 shadow-sm hover:shadow-md relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-200/40 rounded-full blur-3xl"></div>
-                            <h2 className="text-sm font-bold uppercase tracking-wider mb-3 text-indigo-700 flex items-center gap-2">
-                                <BrainCircuit className="w-4 h-4" /> AI Response
-                            </h2>
+                            <div className="flex items-center justify-between mb-3">
+                                <h2 className="text-sm font-bold uppercase tracking-wider text-indigo-700 flex items-center gap-2">
+                                    <BrainCircuit className="w-4 h-4" /> AI Response
+                                </h2>
+                                {memoriesUsed > 0 && (
+                                    <div className="flex items-center gap-1.5 bg-violet-100 border border-violet-200 px-2.5 py-1 rounded-full">
+                                        <BookOpen className="w-3 h-3 text-violet-500" />
+                                        <span className="text-[10px] font-bold text-violet-600 uppercase tracking-wide">
+                                            {memoriesUsed} memor{memoriesUsed === 1 ? 'y' : 'ies'} recalled
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
                             <p className="text-indigo-950 leading-relaxed text-lg relative z-10">{response}</p>
                         </div>
                     </div>

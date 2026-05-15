@@ -1,6 +1,7 @@
 import os
 import uuid
 import json
+import asyncio
 import shutil
 from typing import Optional
 
@@ -19,6 +20,7 @@ from services.emotion_service import analyze_emotion
 from services.response_service import generate_response
 from services.tts_service import generate_tts
 from services.dashboard_service import update_dashboard
+from services.rag_service import rag_service
 
 app = FastAPI(title="NeuroNest Voice Assistant")
 
@@ -33,10 +35,45 @@ app.add_middleware(
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 os.makedirs(settings.GENERATED_DIR, exist_ok=True)
 
+# Hardcoded user_id for the single-user hackathon build
+DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000000"
+
+
 @app.on_event("startup")
 async def startup_event():
     await interaction_repo.create_user()
     logger.info("NeuroNest Backend Started")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# /session-start — Returns a personalised text greeting based on last emotion
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.post("/session-start")
+async def session_start(
+    repo: InteractionRepository = Depends(lambda: interaction_repo)
+):
+    """
+    Called by the frontend when the app loads / a new session begins.
+    Returns a personalised text greeting derived from the user's last known
+    emotional state. No TTS — displayed as a chat message only.
+    """
+    try:
+        supabase = repo.get_supabase_client()
+        greeting = rag_service.get_session_opener(
+            supabase_client=supabase,
+            user_id=DEFAULT_USER_ID,
+            current_session_id=None,  # No active session yet
+        )
+        return {"greeting": greeting}
+    except Exception as e:
+        logger.error(f"Session-start error: {e}")
+        return {"greeting": None}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# /process-voice — Main voice pipeline with RAG memory
+# ──────────────────────────────────────────────────────────────────────────────
 
 @app.post("/process-voice")
 async def process_voice(
@@ -61,7 +98,7 @@ async def process_voice(
             logger.error(f"Failed to upload raw audio: {e}")
 
         # Create session
-        user_id = "00000000-0000-0000-0000-000000000000"
+        user_id = DEFAULT_USER_ID
         session_id = await repo.create_session(user_id)
 
         # STEP 1 — Transcribe
@@ -82,10 +119,20 @@ async def process_voice(
         emotion_dict = analyze_emotion(transcript, features_dict)
         emotion_model = EmotionData(**emotion_dict)
 
-        # STEP 4 — Generate Response
-        ai_response = generate_response(transcript, emotion_dict)
+        # STEP 4 — RAG: Retrieve relevant memories in parallel with prompt prep
+        supabase = repo.get_supabase_client()
+        memories = rag_service.retrieve_memories(
+            supabase_client=supabase,
+            user_id=user_id,
+            query_text=transcript,
+            current_session_id=session_id,
+            k=settings.RAG_TOP_K,
+        )
 
-        # STEP 5 — TTS (with selected voice)
+        # STEP 5 — Generate Response (with memory context)
+        ai_response = generate_response(transcript, emotion_dict, memories)
+
+        # STEP 6 — TTS (with selected voice)
         audio_output_path = generate_tts(ai_response, emotion_model.emotion, voice_name)
 
         tts_audio_url = None
@@ -99,7 +146,7 @@ async def process_voice(
             if not tts_audio_url:
                 tts_audio_url = f"http://localhost:8000/audio/{os.path.basename(audio_output_path)}"
 
-        # STEP 6 — Log Interaction (Consolidated)
+        # STEP 7 — Log Interaction (Consolidated)
         interaction_data = InteractionCreate(
             session_id=session_id,
             user_id=user_id,
@@ -110,10 +157,15 @@ async def process_voice(
             response_text=ai_response,
             tts_audio_url=tts_audio_url
         )
-        await repo.log_interaction(interaction_data)
+        interaction_id = await repo.log_interaction(interaction_data)
 
-        # STEP 7 — Dashboard
+        # STEP 8 — Dashboard
         dashboard = update_dashboard(transcript, emotion_dict)
+
+        # STEP 9 — Generate & store embedding ASYNCHRONOUSLY (fire-and-forget)
+        # This happens after the response is returned so it never adds latency.
+        if interaction_id:
+            asyncio.create_task(_store_embedding_async(repo, interaction_id, transcript))
 
         return {
             "transcript": transcript,
@@ -121,12 +173,33 @@ async def process_voice(
             "emotion": emotion_dict,
             "response": ai_response,
             "audio_url": tts_audio_url,
-            "dashboard": dashboard
+            "dashboard": dashboard,
+            "memories_used": len(memories),
         }
 
     except Exception as e:
         logger.critical(f"Pipeline Crash: {e}")
         return {"error": "Internal Server Error", "detail": str(e)}
+
+
+async def _store_embedding_async(
+    repo: InteractionRepository,
+    interaction_id: str,
+    transcript: str,
+):
+    """
+    Fire-and-forget coroutine: generate an embedding for the transcript
+    and persist it to Supabase. Runs after the response is already sent.
+    """
+    try:
+        embedding = await asyncio.get_event_loop().run_in_executor(
+            None, rag_service.generate_embedding, transcript
+        )
+        if embedding:
+            await repo.store_embedding(interaction_id, embedding)
+    except Exception as e:
+        logger.error(f"RAG: Background embedding task failed — {e}")
+
 
 @app.post("/preview-voice")
 async def preview_voice(voice_name: str = Form(...)):
@@ -138,7 +211,8 @@ async def preview_voice(voice_name: str = Form(...)):
         return {"error": "Failed to generate preview"}
     except Exception as e:
         logger.error(f"Preview Error: {e}")
-        return {"error": str(e)}
+        return {{"error": str(e)}}
+
 
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):

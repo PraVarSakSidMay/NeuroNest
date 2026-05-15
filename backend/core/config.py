@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     GENERATED_DIR: str = "generated"
 
+    # RAG / Embeddings
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    RAG_TOP_K: int = 5
+
     class Config:
         env_file = ".env"
         extra = "ignore"
