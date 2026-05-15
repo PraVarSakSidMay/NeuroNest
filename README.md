@@ -155,6 +155,95 @@ Open **http://localhost:5173** in your browser.
 
 ---
 
+---
+
+## 🗄️ Database Architecture
+
+NeuroNest uses Supabase (PostgreSQL) with the `pgvector` extension for long-term memory. The schema is designed for both session-based interaction logging and semantic search.
+
+### Core Schema Overview
+
+```sql
+-- Core table for consolidated interaction logging & RAG
+CREATE TABLE interactions (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  session_id uuid REFERENCES voice_sessions(id),
+  user_id uuid REFERENCES users(id),
+  transcript text,
+  raw_audio_url text,
+  pitch_mean double precision,
+  jitter double precision,
+  loudness double precision,
+  emotion text,
+  stress_level integer,
+  tone text,
+  contradiction_detected boolean,
+  hidden_emotion text,
+  response_text text,
+  tts_audio_url text,
+  created_at timestamp with time zone DEFAULT now(),
+  embedding vector(1536), -- For RAG semantic search
+  CONSTRAINT interactions_pkey PRIMARY KEY (id)
+);
+
+-- User management
+CREATE TABLE users (
+  id uuid NOT NULL PRIMARY KEY,
+  full_name text,
+  role text,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now())
+);
+
+-- Voice session tracking
+CREATE TABLE voice_sessions (
+  id uuid NOT NULL DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id uuid REFERENCES users(id),
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now())
+);
+```
+
+### Granular Reference Schema (Context Only)
+*The following tables provide a more granular breakdown of the analysis pipeline:*
+
+```sql
+CREATE TABLE voice_logs (
+  id uuid NOT NULL DEFAULT uuid_generate_v4() PRIMARY KEY,
+  session_id uuid REFERENCES voice_sessions(id),
+  user_id uuid REFERENCES users(id),
+  audio_url text,
+  transcript text,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE audio_features (
+  id uuid NOT NULL DEFAULT uuid_generate_v4() PRIMARY KEY,
+  voice_log_id uuid REFERENCES voice_logs(id),
+  pitch_mean double precision,
+  jitter double precision,
+  loudness double precision,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE emotional_analysis (
+  id uuid NOT NULL DEFAULT uuid_generate_v4() PRIMARY KEY,
+  voice_log_id uuid REFERENCES voice_logs(id),
+  emotion text,
+  stress_level double precision,
+  emotional_tone text,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now())
+);
+
+CREATE TABLE ai_responses (
+  id uuid NOT NULL DEFAULT uuid_generate_v4() PRIMARY KEY,
+  voice_log_id uuid REFERENCES voice_logs(id),
+  response_text text,
+  tts_audio_url text,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now())
+);
+```
+
+---
+
 ### 4. Supabase Setup
 
 #### SQL Schema
