@@ -1,0 +1,72 @@
+[
+  {
+    "type": "message_log",
+    "session_id": "test-session-001",
+    "timestamp": "2026-05-14T06:59:44.285853+00:00",
+    "messages": [
+      {
+        "content": "I am feeling very stressed about my exams",
+        "emotion": "stressed",
+        "mood_level": "bad",
+        "timestamp": "2026-05-14T06:59:44.285894+00:00"
+      },
+      {
+        "content": "I am feeling very stressed about my exams",
+        "emotion": "stressed",
+        "mood_level": "bad",
+        "timestamp": "2026-05-14T07:47:43.530138+00:00"
+      },
+      {
+        "content": "I am feeling very stressed about my exams",
+        "emotion": "stressed",
+        "mood_level": "bad",
+        "timestamp": "2026-05-14T07:51:18.361336+00:00"
+      }
+    ],
+    "emotions": [
+      "stressed"
+    ],
+    "tokens": [
+      "feeling",
+      "very",
+      "stressed",
+      "about",
+      "exams",
+      "feeling",
+      "very",
+      "stressed",
+      "about",
+      "exams",
+      "feeling",
+      "very",
+      "stressed",
+      "about",
+      "exams",
+      "stressed"
+    ]
+  },
+  {
+    "type": "message_log",
+    "session_id": "test-session-002",
+    "timestamp": "2026-05-14T07:51:57.438229+00:00",
+    "messages": [
+      {
+        "content": "I am feeling very stressed about my exams",
+        "emotion": "stressed",
+        "mood_level": "bad",
+        "timestamp": "2026-05-14T07:51:57.438267+00:00"
+      }
+    ],
+    "emotions": [
+      "stressed"
+    ],
+    "tokens": [
+      "feeling",
+      "very",
+      "stressed",
+      "about",
+      "exams",
+      "stressed"
+    ]
+  }
+]

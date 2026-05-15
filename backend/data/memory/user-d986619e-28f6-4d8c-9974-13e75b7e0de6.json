@@ -1,0 +1,188 @@
+[
+  {
+    "type": "message_log",
+    "session_id": "9671b3b5-2db3-41ab-9a80-501ef6d793e5",
+    "timestamp": "2026-05-14T09:09:26.457588+00:00",
+    "messages": [
+      {
+        "content": "today it was a big hectic day at work...",
+        "emotion": "stressed",
+        "mood_level": "bad",
+        "timestamp": "2026-05-14T09:09:26.457638+00:00"
+      }
+    ],
+    "emotions": [
+      "stressed"
+    ],
+    "tokens": [
+      "today",
+      "was",
+      "big",
+      "hectic",
+      "day",
+      "work",
+      "stressed"
+    ]
+  },
+  {
+    "type": "message_log",
+    "session_id": "39ff4005-337f-48cb-a9b0-e2b86df62dcd",
+    "timestamp": "2026-05-14T10:01:06.981747+00:00",
+    "messages": [
+      {
+        "content": "I'm feeling really stressed today 😤",
+        "emotion": "stressed",
+        "mood_level": "bad",
+        "timestamp": "2026-05-14T10:01:06.981826+00:00"
+      },
+      {
+        "content": "I'm actually feeling good today! 😊",
+        "emotion": "stressed",
+        "mood_level": "good",
+        "timestamp": "2026-05-14T10:01:48.371913+00:00"
+      },
+      {
+        "content": "I am happy that i passed my exams",
+        "emotion": "happy",
+        "mood_level": "good",
+        "timestamp": "2026-05-14T10:05:26.467345+00:00"
+      },
+      {
+        "content": "I met my favourite celebreity...\\",
+        "emotion": "happy",
+        "mood_level": "good",
+        "timestamp": "2026-05-14T10:06:03.129987+00:00"
+      }
+    ],
+    "emotions": [
+      "stressed",
+      "happy"
+    ],
+    "tokens": [
+      "feeling",
+      "really",
+      "stressed",
+      "today",
+      "actually",
+      "feeling",
+      "good",
+      "today",
+      "happy",
+      "that",
+      "passed",
+      "exams",
+      "met",
+      "favourite",
+      "celebreity",
+      "stressed",
+      "happy"
+    ]
+  },
+  {
+    "type": "message_log",
+    "session_id": "aaf94d21-a57b-410f-9504-79bb8b084356",
+    "timestamp": "2026-05-14T18:55:44.487229+00:00",
+    "messages": [
+      {
+        "content": "I am happy that i passed my examinations...!",
+        "emotion": "happy",
+        "mood_level": "good",
+        "timestamp": "2026-05-14T18:55:44.487268+00:00"
+      },
+      {
+        "content": "I am feeling very lonely right now..",
+        "emotion": "lonely",
+        "mood_level": "bad",
+        "timestamp": "2026-05-14T18:56:57.406730+00:00"
+      }
+    ],
+    "emotions": [
+      "happy",
+      "lonely"
+    ],
+    "tokens": [
+      "happy",
+      "that",
+      "passed",
+      "examinations",
+      "feeling",
+      "very",
+      "lonely",
+      "right",
+      "now",
+      "happy",
+      "lonely"
+    ]
+  },
+  {
+    "type": "message_log",
+    "session_id": "41934da9-b6ea-4efa-86b8-4298c2536245",
+    "timestamp": "2026-05-14T19:29:40.739147+00:00",
+    "messages": [
+      {
+        "content": "I am feeling very lonely...",
+        "emotion": "lonely",
+        "mood_level": "bad",
+        "timestamp": "2026-05-14T19:29:40.739158+00:00"
+      },
+      {
+        "content": "I am happy that i passed my examinations",
+        "emotion": "happy",
+        "mood_level": "good",
+        "timestamp": "2026-05-14T19:31:33.354849+00:00"
+      }
+    ],
+    "emotions": [
+      "lonely",
+      "happy"
+    ],
+    "tokens": [
+      "feeling",
+      "very",
+      "lonely",
+      "happy",
+      "that",
+      "passed",
+      "examinations",
+      "lonely",
+      "happy"
+    ]
+  },
+  {
+    "type": "message_log",
+    "session_id": "6a483deb-67f5-4d12-8716-a729ab8ea207",
+    "timestamp": "2026-05-15T03:40:20.671934+00:00",
+    "messages": [
+      {
+        "content": "I am very happy that i am passed my examinations..!",
+        "emotion": "happy",
+        "mood_level": "very_good",
+        "timestamp": "2026-05-15T03:40:20.671977+00:00"
+      },
+      {
+        "content": "I am feeling very stresses right now...",
+        "emotion": "stressed",
+        "mood_level": "bad",
+        "timestamp": "2026-05-15T03:42:34.598415+00:00"
+      }
+    ],
+    "emotions": [
+      "happy",
+      "stressed"
+    ],
+    "tokens": [
+      "very",
+      "happy",
+      "that",
+      "passed",
+      "examinations",
+      "feeling",
+      "very",
+      "stresses",
+      "right",
+      "now",
+      "happy",
+      "stressed"
+    ]
+  }
+]
