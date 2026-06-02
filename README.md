@@ -338,11 +338,13 @@ This means:
 
 | Tier | Provider | Model | Notes |
 |---|---|---|---|
-| 1 | OpenAI | `gpt-4o` | Best quality |
-| 2 | Groq | `llama-3.3-70b-versatile` | Fast, high quality |
-| 3 | OpenAI | `gpt-4o-mini` | Lighter OpenAI model |
-| 4 | Groq | `llama-3.1-8b-instant` | Ultra-fast, free tier |
-| 5 | Google | `gemini-1.5-flash` | Final LLM fallback |
+| 1 | NVIDIA | `nemotron-3-nano-30b-a3b:free` | Optimized for low latency (Primary) |
+| 2 | Google | `gemini-2.5-flash` | Ultra-fast, high intelligence |
+| 3 | Anthropic | `claude-3.5-haiku` | Best quality/latency balance |
+| 4 | Meta | `llama-3.3-70b-instruct` | Large model reasoning |
+| 5 | Mistral | `mistral-small-3.1-24b-instruct:free` | Efficient, free tier |
+
+**Latency Optimization**: Each tier now has a strict 10-15s timeout to ensure rapid failover.
 
 ### STT Waterfall (2 tiers)
 
@@ -578,6 +580,38 @@ The React frontend (`VoiceAssistant.jsx`) provides:
 - **Credits tracker** — tracks daily API request count in `localStorage` (resets at midnight)
 - **Browser TTS fallback** — if all backend TTS providers fail, uses `window.speechSynthesis`
 - **Error handling** — clear error messages if the backend is unreachable
+
+---
+
+## Wellness MCP Server
+
+NeuroNest includes a local Model Context Protocol server for user-controlled wellness telemetry sharing. It runs over stdio from `backend/mcp_server.py`, reads the local MongoDB-backed interaction history, and exposes:
+
+- Resources: `wellness://summary` and `wellness://trends`
+- Tools: `get_wellness_summary`, `get_daily_trends`, `export_clinical_report`, and `generate_clinical_summary`
+- Clinical exports: `json` and print-friendly `html` reports that can be opened in a browser and saved as PDF
+
+Run it locally from the backend environment:
+
+```bash
+cd backend
+python mcp_server.py
+```
+
+Example Claude Desktop-style client configuration:
+
+```json
+{
+  "mcpServers": {
+    "neuronest-wellness": {
+      "command": "python",
+      "args": ["C:\\Users\\Dell\\Downloads\\VoiceAssistant\\backend\\mcp_server.py"]
+    }
+  }
+}
+```
+
+Clinical report exports are written to `backend/generated/clinical_report.html` by default when no filepath is provided. The report includes session count, average stress, dominant emotion, contradiction rate, average eye contact, and daily trend rows. This is a wellness telemetry export, not a diagnosis.
 
 ---
 

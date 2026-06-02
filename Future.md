@@ -1,49 +1,39 @@
 # Future Roadmap: NeuroNest Evolution
 
-This document outlines the scope for implementing advanced AI features in NeuroNest, focusing on long-term memory, autonomous actions, and standardized data interaction.
-
-## 1. RAG (Retrieval-Augmented Generation)
-
-Currently, NeuroNest has a short-term memory limited by the session. Implementing RAG will allow the assistant to remember past interactions across weeks or months.
-
-### Scope:
-- **Vector Database**: Use Supabase's `pgvector` to store embeddings of past conversation transcripts.
-- **Context Retrieval**: Before generating a response, the system will search for similar past conversations.
-- **Personalized Insights**: "I remember you were feeling anxious about your exam last Tuesday. How did it go?"
-- **Emotional Trends**: Analyze longitudinal emotional data to identify triggers or progress.
-
-### Implementation:
-1. Generate embeddings using OpenAI's `text-embedding-3-small` or a local model.
-2. Store in a `vector` column in the `interactions` table.
-3. Use a similarity search (cosine similarity) during the `generate_response` phase.
-
-## 2. AI Agents
-
-Moving from a reactive assistant to a proactive agent that can perform tasks.
-
-### Scope:
-- **Tool Calling**: Give the LLM access to tools like `send_email`, `schedule_reminder`, `get_weather`, or `log_wellness_metric`.
-- **Autonomous Follow-ups**: If a user is highly distressed, the agent could automatically schedule a check-in for the next morning.
-- **Multimodal Agency**: Analyze not just voice, but also heart rate data (if integrated) or calendar events.
-
-### Implementation:
-1. Use OpenAI's Function Calling or Groq's Tool Use capabilities.
-2. Define a set of "Wellness Tools" that the model can invoke based on the conversation flow.
-
-## 3. MCP (Model Context Protocol)
-
-MCP is a standard for how AI models interact with data sources and tools.
-
-### Scope:
-- **Local Data Access**: Safely allow the AI to read local files (e.g., a wellness journal) or local database states using standardized MCP servers.
-- **Interoperability**: Easily switch between different model providers (Anthropic, OpenAI, Google) while maintaining the same tool-use and data-access patterns.
-- **Standardized Connectors**: Connect NeuroNest to external wellness APIs (Oura, Apple Health, Fitbit) using MCP-compliant interfaces.
-
-### Implementation:
-1. Implement an MCP server that exposes NeuroNest's emotional history database.
-2. Use an MCP-compatible client to orchestrate the models and their access to these resources.
+This document outlines the long-term technical and clinical vision for NeuroNest, focusing on providing high-empathy, privacy-preserving therapeutic support for troubled or distressed individuals.
 
 ---
 
-## Conclusion
-By combining **RAG** for memory, **Agents** for action, and **MCP** for interoperability, NeuroNest can transition from a simple voice interface to a comprehensive, deeply personalized wellness companion.
+## Completed Milestones
+
+### 1. Personalized Baseline Calibration (Emotion Adaptability) — [COMPLETED]
+*   **Neutral Calibration Routine**: Implemented a 3-second interactive wizard on webcam activation that establishes a user-specific baseline.
+*   **Normalized Thresholding**: Scaled raw Action Unit (AU) activation relative to the neutral baseline, significantly improving classification accuracy.
+*   **Adaptive Sensitivity**: Preserved calibration baseline inside local browser storage to keep user preferences persistent.
+
+### 2. Context-Aware Visual Cues (Gaze & Body Language Adaptation) — [COMPLETED]
+*   **Avoidance Detection**: Monitored eye contact durations and head orientation (yaw/pitch). If a distressed user repeatedly looks down or away, "cognitive avoidance" / "averted gaze" is flagged.
+*   **Conversational Adaptation**: Passed gaze cues and eye contact telemetry to the LLM response service. The backend adapts its responses with greater empathy and support when visual distress cues are present.
+
+### 3. Lightweight Local Neural Classification & Server Optimization — [COMPLETED]
+*   **Softmax Perceptron Neural Network**: Replaced the rule-based emotion heuristics with a single-layer feed-forward neural network operating in the browser, mapping 6 Action Units, eye contact, and head pitch deflection to mathematically normalized emotion probabilities.
+*   **Zero-Overhead Backend**: Completely removed `openSMILE` and `librosa` dependencies from the backend Python server, reducing container sizes from >1.2GB to <150MB, speeding up deployments, and resolving package toolchain lock issues.
+*   **Pure-Python Fallback**: Configured a lightweight pure-Python audio analyzer using FFmpeg and the standard `wave` module as a server fallback when client-side features are missing.
+
+### 4. Dynamic Resiliency Local Offline Mode — [COMPLETED]
+*   **Connectivity Event Monitoring**: Setup window online/offline event listeners and status hooks to adapt the UI in real-time when the network is lost.
+*   **Seamless Intercept**: Caught errors during microphone/voice processing requests and redirected the user instantly to local offline coping care.
+*   **Visual Breathing Bubble**: Built a premium glassmorphic box-breathing interface featuring dynamic scale animations and transitions.
+*   **Local TTS Guidance**: Leveraged browser-native `window.speechSynthesis` to vocalize phase instructions using calming female English voices.
+*   **Offline Service Worker caching**: Implemented `sw.js` with a cache-first routing strategy for external jsdelivr MediaPipe CDN WASM assets and network-first logic for local static bundles.
+
+### 5. Standardized Wellness MCP Server - [COMPLETED]
+*   **Local MCP Server**: Added `backend/mcp_server.py`, a stdio Model Context Protocol server exposing local wellness summary and trend resources.
+*   **Clinical Sharing Tools**: Added tools for wellness summaries, daily trends, print-friendly HTML/JSON clinical report export, and LLM-assisted therapist-facing summaries.
+*   **Longitudinal Telemetry**: Persisted visual attention telemetry (`eye_contact_ratio` and `head_pose`) alongside emotion data so clinical reports can include gaze and avoidance trends.
+
+---
+
+## Future Goals
+
+New roadmap items will be added here as the next product and clinical integration priorities are defined.

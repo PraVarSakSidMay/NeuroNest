@@ -1,36 +1,64 @@
-import os
-from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
+"""Backward-compatible config module.
 
-load_dotenv()
+DEPRECATED: Use core/config package for new code.
+This module is kept for backward compatibility during migration.
+"""
+# Import from the new config package
+from core.config import (
+    settings,
+    Settings,
+    ProviderConfig,
+    StorageConfig,
+    AudioConfig,
+    RAGConfig,
+    OPENAI_API_KEY,
+    GEMINI_API_KEY,
+    GROQ_API_KEY,
+    OPENROUTER_API_KEY,
+    ELEVENLABS_API_KEY,
+    DEEPGRAM_API_KEY,
+    CARTESIA_API_KEY,
+    LMNT_API_KEY,
+    MURF_API_KEY,
+    MONGODB_URI,
+    MONGODB_DB,
+    UPLOAD_DIR,
+    GENERATED_DIR,
+    EMBEDDING_MODEL,
+    RAG_TOP_K,
+)
 
-class Settings(BaseSettings):
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
-    DEEPGRAM_API_KEY: str = os.getenv("DEEPGRAM_API_KEY", "")
-    CARTESIA_API_KEY: str = os.getenv("CARTESIA_API_KEY", "")
-    LMNT_API_KEY: str = os.getenv("LMNT_API_KEY", "")
-    MURF_API_KEY: str = os.getenv("MURF_API_KEY", "")
-    
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
-    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
-    
-    # Storage Buckets
-    VOICE_BUCKET: str = "voice-recordings"
-    TTS_BUCKET: str = "ai-responses"
-    
-    # Dirs
-    UPLOAD_DIR: str = "uploads"
-    GENERATED_DIR: str = "generated"
+# Make settings attributes directly accessible for legacy code
+# This allows settings.MONGODB_URI to work
+class _SettingsProxy:
+    def __getattr__(self, name):
+        if name in globals():
+            return globals()[name]
+        return getattr(settings, name)
 
-    # RAG / Embeddings
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    RAG_TOP_K: int = 5
+import sys
+sys.modules['core.config'].__dict__['settings'] = _SettingsProxy()
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
-
-settings = Settings()
+__all__ = [
+    "settings",
+    "Settings",
+    "ProviderConfig",
+    "StorageConfig",
+    "AudioConfig",
+    "RAGConfig",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+    "OPENROUTER_API_KEY",
+    "ELEVENLABS_API_KEY",
+    "DEEPGRAM_API_KEY",
+    "CARTESIA_API_KEY",
+    "LMNT_API_KEY",
+    "MURF_API_KEY",
+    "MONGODB_URI",
+    "MONGODB_DB",
+    "UPLOAD_DIR",
+    "GENERATED_DIR",
+    "EMBEDDING_MODEL",
+    "RAG_TOP_K",
+]

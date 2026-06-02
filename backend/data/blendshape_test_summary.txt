@@ -1,0 +1,127 @@
+Extracted Blendshape Points for Emotion Reference Images
+============================================================
+
+Emotion: HAPPY
+----------------------------------------
+eyeSquintLeft: 0.3204
+eyeLookInLeft: 0.31
+eyeLookOutRight: 0.3079
+mouthStretchRight: 0.2789
+mouthSmileRight: 0.2581
+browOuterUpLeft: 0.1908
+browInnerUp: 0.1284
+mouthSmileLeft: 0.1264
+mouthUpperUpRight: 0.1096
+browOuterUpRight: 0.1016
+eyeSquintRight: 0.1015
+eyeLookDownLeft: 0.0972
+eyeLookDownRight: 0.089
+eyeBlinkLeft: 0.0724
+eyeLookUpRight: 0.0717
+eyeLookUpLeft: 0.0708
+mouthUpperUpLeft: 0.0583
+
+============================================================
+
+Emotion: SAD
+----------------------------------------
+eyeLookDownLeft: 0.6245
+eyeBlinkRight: 0.6228
+eyeLookDownRight: 0.6167
+eyeSquintLeft: 0.6138
+eyeBlinkLeft: 0.6056
+eyeSquintRight: 0.4215
+mouthShrugLower: 0.2507
+browOuterUpRight: 0.1926
+mouthPucker: 0.187
+eyeLookInRight: 0.1595
+eyeLookOutLeft: 0.1465
+browOuterUpLeft: 0.1111
+mouthRollLower: 0.0916
+
+============================================================
+
+Emotion: ANGRY
+----------------------------------------
+mouthSmileLeft: 0.8057
+mouthSmileRight: 0.7084
+eyeSquintRight: 0.4125
+eyeSquintLeft: 0.2393
+eyeLookInRight: 0.2222
+eyeLookOutLeft: 0.21
+eyeLookDownLeft: 0.1612
+mouthRollUpper: 0.1292
+eyeLookDownRight: 0.1251
+mouthUpperUpRight: 0.1221
+mouthUpperUpLeft: 0.1218
+eyeBlinkLeft: 0.0923
+eyeLookUpRight: 0.0858
+mouthPressRight: 0.0803
+mouthPressLeft: 0.0736
+eyeLookUpLeft: 0.0711
+browOuterUpRight: 0.0656
+eyeBlinkRight: 0.0653
+browOuterUpLeft: 0.06
+
+============================================================
+
+Emotion: SURPRISED
+----------------------------------------
+browOuterUpLeft: 0.5074
+browOuterUpRight: 0.2891
+eyeSquintLeft: 0.2781
+eyeSquintRight: 0.1719
+eyeLookUpLeft: 0.1231
+browInnerUp: 0.121
+eyeLookUpRight: 0.1198
+eyeLookOutLeft: 0.1162
+eyeLookInRight: 0.1156
+mouthShrugUpper: 0.0742
+eyeLookDownRight: 0.0665
+eyeLookDownLeft: 0.0612
+eyeBlinkLeft: 0.0599
+eyeBlinkRight: 0.0569
+mouthPucker: 0.053
+
+============================================================
+
+Emotion: DISGUSTED
+----------------------------------------
+mouthSmileLeft: 0.8931
+mouthSmileRight: 0.879
+mouthUpperUpLeft: 0.7282
+mouthUpperUpRight: 0.7227
+eyeLookOutLeft: 0.6473
+eyeLookInRight: 0.6149
+eyeSquintLeft: 0.5429
+eyeSquintRight: 0.3617
+eyeLookUpLeft: 0.2648
+mouthLowerDownRight: 0.239
+eyeLookUpRight: 0.2384
+mouthLowerDownLeft: 0.1256
+mouthPressLeft: 0.1111
+mouthPressRight: 0.1056
+browDownRight: 0.0863
+browDownLeft: 0.0853
+eyeBlinkLeft: 0.0722
+
+============================================================
+
+Emotion: NEUTRAL
+----------------------------------------
+mouthPucker: 0.3523
+eyeSquintLeft: 0.3457
+eyeSquintRight: 0.2888
+eyeLookOutRight: 0.2829
+eyeLookInLeft: 0.2754
+eyeLookDownLeft: 0.1226
+eyeBlinkLeft: 0.1214
+eyeLookDownRight: 0.1165
+browOuterUpLeft: 0.1074
+eyeBlinkRight: 0.095
+eyeLookUpLeft: 0.0843
+eyeLookUpRight: 0.0813
+browDownRight: 0.0642
+
+============================================================
+

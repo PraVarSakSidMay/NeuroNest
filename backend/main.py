@@ -11,18 +11,20 @@ from fastapi.responses import FileResponse
 
 from core.config import settings
 from core.logger import logger
+from core.exceptions import domain_error_handler, http_exception_handler, unhandled_exception_handler
+from domain.exceptions import DomainError
 from models.interaction import InteractionCreate, AudioFeatures, EmotionData
 from repositories.interaction_repo import interaction_repo, InteractionRepository
+from infrastructure.mongodb_client import init_db, close_db
 
-from services.whisper_service import transcribe_audio
-from services.opensmile_service import extract_audio_features
-from services.emotion_service import analyze_emotion
-from services.response_service import generate_response
-from services.tts_service import generate_tts
 from services.dashboard_service import update_dashboard
 from services.rag_service import rag_service
+from di import container
 
 app = FastAPI(title="NeuroNest Voice Assistant")
+
+app.add_exception_handler(DomainError, domain_error_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,8 +43,15 @@ DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000000"
 
 @app.on_event("startup")
 async def startup_event():
-    await interaction_repo.create_user()
-    logger.info("NeuroNest Backend Started")
+    await init_db()                    # ensure MongoDB indexes exist
+    await interaction_repo.create_user()  # upsert the default user
+    logger.info("NeuroNest Backend Started — MongoDB backend active")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await close_db()
+    logger.info("NeuroNest Backend Shutdown — MongoDB connection closed")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -59,11 +68,10 @@ async def session_start(
     emotional state. No TTS — displayed as a chat message only.
     """
     try:
-        supabase = repo.get_supabase_client()
-        greeting = rag_service.get_session_opener(
-            supabase_client=supabase,
+        greeting = await rag_service.get_session_opener(
+            supabase_client=None,  # MongoDB — rag_service ignores this arg now
             user_id=DEFAULT_USER_ID,
-            current_session_id=None,  # No active session yet
+            current_session_id=None,
         )
         return {"greeting": greeting}
     except Exception as e:
@@ -79,9 +87,11 @@ async def session_start(
 async def process_voice(
     file: UploadFile = File(...),
     audio_analysis: Optional[str] = Form(None),
+    video_analysis: Optional[str] = Form(None),
     voice_name: Optional[str] = Form("Rachel"),
-    repo: InteractionRepository = Depends(lambda: interaction_repo)
+    expression_history: Optional[str] = Form(None),
 ):
+    """Main voice processing pipeline. Delegates to clean ConversationOrchestrator."""
     try:
         file_id = str(uuid.uuid4())
         input_path = os.path.join(settings.UPLOAD_DIR, f"{file_id}.webm")
@@ -89,96 +99,67 @@ async def process_voice(
         with open(input_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # 0. Upload to Supabase Storage
-        raw_audio_url = None
-        try:
-            with open(input_path, "rb") as f:
-                raw_audio_url = await repo.upload_file(settings.VOICE_BUCKET, f"{file_id}.webm", f.read())
-        except Exception as e:
-            logger.error(f"Failed to upload raw audio: {e}")
-
-        # Create session
-        user_id = DEFAULT_USER_ID
-        session_id = await repo.create_session(user_id)
-
-        # STEP 1 — Transcribe
-        transcript = transcribe_audio(input_path)
-
-        # STEP 2 — Audio Features
-        frontend_features = None
-        if audio_analysis:
-            try:
-                frontend_features = json.loads(audio_analysis)
-            except Exception:
-                pass
+        orchestrator = container.conversation_orchestrator
+        result = await orchestrator.process_conversation(
+            audio_path=input_path,
+            audio_analysis=audio_analysis,
+            video_analysis=video_analysis,
+            voice_name=voice_name,
+        )
         
-        features_dict = extract_audio_features(input_path, frontend_features)
-        features_model = AudioFeatures(**features_dict)
-
-        # STEP 3 — Emotion Analysis
-        emotion_dict = analyze_emotion(transcript, features_dict)
-        emotion_model = EmotionData(**emotion_dict)
-
-        # STEP 4 — RAG: Retrieve relevant memories in parallel with prompt prep
-        supabase = repo.get_supabase_client()
-        memories = rag_service.retrieve_memories(
-            supabase_client=supabase,
-            user_id=user_id,
-            query_text=transcript,
-            current_session_id=session_id,
-            k=settings.RAG_TOP_K,
-        )
-
-        # STEP 5 — Generate Response (with memory context)
-        ai_response = generate_response(transcript, emotion_dict, memories)
-
-        # STEP 6 — TTS (with selected voice)
-        audio_output_path = generate_tts(ai_response, emotion_model.emotion, voice_name)
-
-        tts_audio_url = None
-        if audio_output_path:
-            try:
-                with open(audio_output_path, "rb") as f:
-                    tts_audio_url = await repo.upload_file(settings.TTS_BUCKET, f"{file_id}_response.mp3", f.read())
-            except Exception as e:
-                logger.error(f"Failed to upload TTS audio: {e}")
-
-            if not tts_audio_url:
-                tts_audio_url = f"http://localhost:8000/audio/{os.path.basename(audio_output_path)}"
-
-        # STEP 7 — Log Interaction (Consolidated)
-        interaction_data = InteractionCreate(
-            session_id=session_id,
-            user_id=user_id,
-            transcript=transcript,
-            raw_audio_url=raw_audio_url,
-            features=features_model,
-            emotion_data=emotion_model,
-            response_text=ai_response,
-            tts_audio_url=tts_audio_url
-        )
-        interaction_id = await repo.log_interaction(interaction_data)
-
-        # STEP 8 — Dashboard
-        dashboard = update_dashboard(transcript, emotion_dict)
-
-        # STEP 9 — Generate & store embedding ASYNCHRONOUSLY (fire-and-forget)
-        # This happens after the response is returned so it never adds latency.
-        if interaction_id:
-            asyncio.create_task(_store_embedding_async(repo, interaction_id, transcript))
-
-        return {
-            "transcript": transcript,
-            "audio_features": features_dict,
-            "emotion": emotion_dict,
-            "response": ai_response,
-            "audio_url": tts_audio_url,
-            "dashboard": dashboard,
-            "memories_used": len(memories),
-        }
+        # Add legacy dashboard key for backward compatibility
+        result["dashboard"] = update_dashboard(result["transcript"], result["emotion"])
+        return result
 
     except Exception as e:
         logger.critical(f"Pipeline Crash: {e}")
+        return {"error": "Internal Server Error", "detail": str(e)}
+
+
+# New incremental endpoint using the Clean Architecture use-case (non-breaking)
+@app.post("/process-voice-v2")
+async def process_voice_v2(
+    file: UploadFile = File(...),
+    audio_analysis: Optional[str] = Form(None),
+    video_analysis: Optional[str] = Form(None),
+    voice_name: Optional[str] = Form("Rachel"),
+    expression_history: Optional[str] = Form(None),
+):
+    """Legacy v2 endpoint, now alias for v3."""
+    return await process_voice_v3(file, audio_analysis, video_analysis, voice_name, expression_history)
+
+
+# New route using the conversation orchestrator (clean architecture)
+@app.post("/process-voice-v3")
+async def process_voice_v3(
+    file: UploadFile = File(...),
+    audio_analysis: Optional[str] = Form(None),
+    video_analysis: Optional[str] = Form(None),
+    voice_name: Optional[str] = Form("Rachel"),
+    expression_history: Optional[str] = Form(None),
+):
+    """New route using the conversation orchestrator with clean architecture."""
+    try:
+        import uuid
+        import shutil
+        
+        file_id = str(uuid.uuid4())
+        input_path = os.path.join(settings.UPLOAD_DIR, f"{file_id}.webm")
+        
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        orchestrator = container.conversation_orchestrator
+        result = await orchestrator.process_conversation(
+            audio_path=input_path,
+            audio_analysis=audio_analysis,
+            video_analysis=video_analysis,
+            voice_name=voice_name,
+            expression_history=expression_history,
+        )
+        return result
+    except Exception as e:
+        logger.critical(f"Process-Voice-V3 Crash: {e}")
         return {"error": "Internal Server Error", "detail": str(e)}
 
 
@@ -205,15 +186,40 @@ async def _store_embedding_async(
 async def preview_voice(voice_name: str = Form(...)):
     try:
         preview_text = f"Hello! I am {voice_name}, your NeuroNest assistant. I am ready to help you."
-        audio_path = generate_tts(preview_text, "neutral", voice_name)
+        audio_path = container.tts_provider.synthesize(preview_text, "neutral", voice_name)
         if audio_path:
             return {"audio_url": f"http://localhost:8000/audio/{os.path.basename(audio_path)}"}
         return {"error": "Failed to generate preview"}
     except Exception as e:
         logger.error(f"Preview Error: {e}")
-        return {{"error": str(e)}}
+        return {"error": str(e)}
 
 
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
     return FileResponse(os.path.join(settings.GENERATED_DIR, filename))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# /feedback — RL Reward Signal
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.post("/feedback")
+async def submit_feedback(
+    interaction_id: str = Form(...),
+    score: float = Form(...),  # Expecting 1 for positive, -1 for negative
+    text: Optional[str] = Form(None),
+):
+    """
+    Submits user feedback for an interaction.
+    This serves as the 'Reward' signal for the Reinforcement Learning loop.
+    """
+    try:
+        success = await interaction_repo.submit_feedback(interaction_id, score, text)
+        if success:
+            logger.info(f"RL: Feedback received for {interaction_id}: {score}")
+            return {"status": "success"}
+        return {"status": "error", "message": "Failed to store feedback"}
+    except Exception as e:
+        logger.error(f"Feedback Error: {e}")
+        return {"status": "error", "message": str(e)}

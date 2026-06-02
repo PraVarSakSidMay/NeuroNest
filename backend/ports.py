@@ -1,0 +1,33 @@
+from typing import Protocol, Optional, List
+from models.interaction import InteractionCreate
+from domain.value_objects import Transcript, AudioFeatures, Emotion
+
+
+class IInteractionRepository(Protocol):
+    """Legacy interface for backward compatibility."""
+    async def create_user(self, full_name: str) -> str: ...
+    async def create_session(self, user_id: str) -> Optional[str]: ...
+    async def log_interaction(self, interaction: InteractionCreate) -> Optional[str]: ...
+    async def store_embedding(self, interaction_id: str, embedding: List[float]) -> bool: ...
+    async def upload_file(self, bucket: str, path: str, file_data: bytes) -> Optional[str]: ...
+    def get_supabase_client(self): ...
+
+
+class IEmbeddingProvider(Protocol):
+    def generate_embedding(self, text: str) -> Optional[List[float]]: ...
+
+
+class ILLMClient(Protocol):
+    def generate_response(self, transcript: str, emotion: dict, memories: list, expression_history: list = None) -> str: ...
+
+
+class ITTSProvider(Protocol):
+    def generate_tts(self, text: str, emotion: str, voice_name: str) -> Optional[str]: ...
+
+
+class IEmotionAnalyzer(Protocol):
+    def analyze(
+        self,
+        transcript: Transcript,
+        audio_features: Optional[AudioFeatures] = None,
+    ) -> Emotion: ...

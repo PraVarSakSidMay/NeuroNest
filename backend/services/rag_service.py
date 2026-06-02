@@ -2,9 +2,10 @@
 RAG Service — Retrieval-Augmented Generation Memory Layer
 ==========================================================
 Handles:
-  - Generating text embeddings via OpenAI text-embedding-3-small
-  - Storing embeddings in Supabase pgvector after each interaction
+  - Generating text embeddings via OpenRouter (text-embedding-3-small)
+  - Storing embeddings in MongoDB after each interaction
   - Retrieving semantically similar past memories before response generation
+    (cosine similarity computed in Python via MongoEmbeddingRepository)
   - Computing the session-start greeting based on last session's emotion
 """
 
@@ -15,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from openai import OpenAI
+from services.model_manager import OPENROUTER_BASE_URL, OPENROUTER_SITE_URL, OPENROUTER_APP_NAME
 
 from core.config import settings
 from core.logger import logger
@@ -58,26 +60,37 @@ def _relative_time(created_at_str: str) -> str:
         return "some time ago"
 
 
+
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # RAG Service class
 # ─────────────────────────────────────────────────────────────────────────────
 
 class RAGService:
     def __init__(self):
-        self._openai_client: Optional[OpenAI] = None
+        self._embedding_client: Optional[OpenAI] = None
 
     @property
     def openai_client(self) -> OpenAI:
-        if self._openai_client is None:
-            self._openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        return self._openai_client
+        """OpenAI-compatible client pointed at OpenRouter for embeddings."""
+        if self._embedding_client is None:
+            self._embedding_client = OpenAI(
+                api_key=settings.OPENROUTER_API_KEY,
+                base_url=OPENROUTER_BASE_URL,
+                default_headers={
+                    "HTTP-Referer": OPENROUTER_SITE_URL,
+                    "X-Title": OPENROUTER_APP_NAME,
+                },
+            )
+        return self._embedding_client
 
     # ── Embedding generation ────────────────────────────────────────────────
 
     def generate_embedding(self, text: str) -> Optional[list[float]]:
         """
         Generate a 1536-dim embedding for the given text using
-        OpenAI text-embedding-3-small. Returns None on failure.
+        text-embedding-3-small via OpenRouter. Returns None on failure.
         """
         if not text or not text.strip():
             return None
@@ -93,9 +106,9 @@ class RAGService:
 
     # ── Memory retrieval ────────────────────────────────────────────────────
 
-    def retrieve_memories(
+    async def retrieve_memories(
         self,
-        supabase_client,
+        supabase_client,  # kept for signature compatibility; ignored — we use MongoDB
         user_id: str,
         query_text: str,
         current_session_id: Optional[str] = None,
@@ -103,6 +116,7 @@ class RAGService:
     ) -> list[dict]:
         """
         Retrieve the top-k semantically similar past interactions for this user.
+        Uses MongoDB cosine-similarity search (MongoEmbeddingRepository).
         Returns a list of memory dicts formatted for prompt injection.
         """
         if k is None:
@@ -114,45 +128,32 @@ class RAGService:
             return []
 
         try:
-            result = supabase_client.rpc(
-                "match_interactions",
-                {
-                    "query_embedding": embedding,
-                    "match_user_id": user_id,
-                    "match_count": k,
-                    "exclude_session": current_session_id,
-                },
-            ).execute()
-
+            from infrastructure.mongodb_repositories import MongoEmbeddingRepository
+            repo = MongoEmbeddingRepository()
+            # Await the async method directly (safe in async context)
+            memories_raw = await repo.find_similar(
+                user_id=user_id,
+                query_embedding=embedding,
+                k=k,
+                exclude_session=current_session_id,
+            )
             memories = []
-            for row in (result.data or []):
-                # Only include memories with meaningful similarity
-                if row.get("similarity", 0) < 0.3:
-                    continue
+            for row in memories_raw:
                 memories.append({
-                    "transcript": row.get("transcript", ""),
-                    "emotion": row.get("emotion", "unknown"),
-                    "stress_level": row.get("stress_level", 0),
-                    "tone": row.get("tone", ""),
-                    "hidden_emotion": row.get("hidden_emotion", ""),
-                    "response_text": row.get("response_text", ""),
-                    "created_at": row.get("created_at", ""),
-                    "similarity": row.get("similarity", 0),
+                    **row,
                     "relative_time": _relative_time(row.get("created_at", "")),
                 })
-
             logger.info(f"RAG: Retrieved {len(memories)} relevant memories for user {user_id}.")
             return memories
-
         except Exception as e:
             logger.error(f"RAG: Memory retrieval failed — {e}")
             return []
 
     # ── Session-start greeting ───────────────────────────────────────────────
 
-    def get_session_opener(
+    async def get_session_opener(
         self,
-        supabase_client,
+        supabase_client,  # kept for signature compatibility; ignored — we use MongoDB
         user_id: str,
         current_session_id: Optional[str] = None,
     ) -> Optional[str]:
@@ -163,24 +164,32 @@ class RAGService:
         - Negative / high-stress → "Are you still feeling [emotion]?"
         - Positive / calm       → "Hi! I hope you're still feeling [emotion]!"
         - No previous data      → None (frontend shows default welcome)
+
+        Now queries MongoDB directly for the last interaction outside the
+        current session.
         """
         try:
-            result = supabase_client.rpc(
-                "get_last_session_emotion",
-                {
-                    "lookup_user_id": user_id,
-                    "current_session": current_session_id,
-                },
-            ).execute()
+            from infrastructure.mongodb_client import get_db
+            from pymongo import DESCENDING
 
-            if not result.data:
+            db = get_db()
+            query: dict = {"user_id": user_id, "emotion": {"$ne": None}}
+            if current_session_id:
+                query["session_id"] = {"$ne": current_session_id}
+
+            # Await async query directly (safe in async context)
+            doc = await db["interactions"].find_one(
+                query,
+                sort=[("created_at", DESCENDING)],
+            )
+
+            if not doc:
                 logger.info("RAG: No previous session emotion found — showing default greeting.")
                 return None
 
-            row = result.data[0]
-            emotion: str = row.get("emotion", "neutral") or "neutral"
-            stress_level: int = row.get("stress_level", 0) or 0
-            relative = _relative_time(row.get("created_at", ""))
+            emotion: str = doc.get("emotion", "neutral") or "neutral"
+            stress_level: int = doc.get("stress_level", 0) or 0
+            relative = _relative_time(doc.get("created_at", ""))
 
             emotion_display = emotion.strip().lower()
 

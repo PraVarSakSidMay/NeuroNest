@@ -1,22 +1,24 @@
-import logging
-import sys
+"""Backward-compatible logger module.
 
-def setup_logger(name: str = "NeuroNest"):
-    logger = logging.getLogger(name)
-    if logger.hasHandlers():
-        return logger
-        
-    logger.setLevel(logging.INFO)
-    
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    # Console handler
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-    
-    return logger
+DEPRECATED: Use core.logging module for new code.
+This module is kept for backward compatibility during migration.
+"""
+from core.logging import (
+    StructuredLogger,
+    get_logger,
+    setup_logger,
+    logger,
+    with_correlation_id,
+    log_event,
+    TimingContext,
+)
 
-logger = setup_logger()
+__all__ = [
+    "StructuredLogger",
+    "get_logger",
+    "setup_logger",
+    "logger",
+    "with_correlation_id",
+    "log_event",
+    "TimingContext",
+]

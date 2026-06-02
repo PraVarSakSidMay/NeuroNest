@@ -12,6 +12,7 @@ class AudioFeatures(BaseModel):
     is_crying: bool = False
     is_whispering: bool = False
     voice_description: str = "stable voice"
+    audio_emotion_hint: str = ""
     source: str = "unknown"
 
 class EmotionData(BaseModel):
