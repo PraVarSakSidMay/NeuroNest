@@ -24,11 +24,13 @@ import {
 } from "lucide-react";
 import { startSession, processVoice, previewVoice as previewVoiceApi } from "../lib/api-client";
 import { Emotion } from "../types";
+import type { RLAction, PolicyName } from "../types";
 import { useEmotionStore } from "../stores/useEmotionStore";
 import { useVoiceStore } from "../stores/useVoiceStore";
 import { useConversationStore } from "../stores/useConversationStore";
 import { useVideoEmotionDetection } from "../hooks/useVideoEmotionDetection";
 import { PrivacyConsent } from "./privacy/PrivacyConsent";
+import FeedbackWidget from "./FeedbackWidget";
 
 const DAILY_REQUEST_LIMIT = 100;
 const USAGE_STORAGE_KEY = "neuronest_api_usage";
@@ -295,6 +297,11 @@ export default function VoiceAssistant() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [sessionGreeting, setSessionGreeting] = useState(null);
   const [memoriesUsed, setMemoriesUsed] = useState(0);
+  // RL state — tracks last action vector and policy for FeedbackWidget
+  const [lastInteractionId, setLastInteractionId] = useState<string | null>(null);
+  const [lastRLAction, setLastRLAction] = useState<RLAction | null>(null);
+  const [lastRLPolicy, setLastRLPolicy] = useState<PolicyName | null>(null);
+  const sessionStartTimeRef = useRef<number>(Date.now());
 
   // Client-side Video Emotion Store
   const {
@@ -617,6 +624,12 @@ export default function VoiceAssistant() {
           setEmotionData(res.emotion);
           setResponse(res.response);
           setMemoriesUsed(res.memories_used || 0);
+
+          // Capture RL metadata for FeedbackWidget
+          const rlRes = res as any;
+          if (rlRes.interaction_id) setLastInteractionId(rlRes.interaction_id);
+          if (rlRes.applied_action)  setLastRLAction(rlRes.applied_action);
+          if (rlRes.applied_policy)  setLastRLPolicy(rlRes.applied_policy);
 
           const updated = incrementUsage();
           setRequests(updated.requests);
@@ -1068,6 +1081,15 @@ export default function VoiceAssistant() {
                       )}
                     </div>
                     <p className="text-indigo-950 leading-relaxed text-md relative z-10">{response}</p>
+                    {/* ── RL Feedback Widget ─────────────────────────── */}
+                    {lastInteractionId && (
+                      <FeedbackWidget
+                        interactionId={lastInteractionId}
+                        sessionStartTime={sessionStartTimeRef.current}
+                        appliedAction={lastRLAction}
+                        appliedPolicy={lastRLPolicy}
+                      />
+                    )}
                   </div>
                 </div>
               )}

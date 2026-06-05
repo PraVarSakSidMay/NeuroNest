@@ -144,6 +144,77 @@ export interface PreviewVoiceResponse {
 }
 
 // ============================================================================
+// RL Policy Engine Types
+// ============================================================================
+
+export type PolicyName = "thompson_sampling" | "epsilon_greedy" | "ucb1";
+
+export interface RLAction {
+  persona: string;
+  response_length: "brief" | "moderate" | "detailed";
+  questioning_style: "none" | "open" | "reflective" | "socratic";
+  motivation_style: "none" | "encouragement" | "challenge" | "reframe";
+  detail_level: "concise" | "balanced" | "thorough";
+}
+
+export interface RLArmStats {
+  arm: string;
+  pulls: number;
+  mean: number;
+  alpha: number;
+  beta_val: number;
+  variance: number;
+}
+
+export interface RLPolicyStats {
+  total_pulls: number;
+  cumulative_reward: number;
+  win_rate: number;
+  epsilon: number | null;
+  arms: Record<string, RLArmStats[]>;
+}
+
+export interface RLPolicyReport {
+  active_policy: PolicyName;
+  policies: Record<PolicyName, RLPolicyStats>;
+}
+
+export interface RLRankings {
+  persona: Array<{ arm: string; avg_mean: number; total_pulls: number }>;
+  response_length: Array<{ arm: string; avg_mean: number; total_pulls: number }>;
+  questioning_style: Array<{ arm: string; avg_mean: number; total_pulls: number }>;
+  motivation_style: Array<{ arm: string; avg_mean: number; total_pulls: number }>;
+  detail_level: Array<{ arm: string; avg_mean: number; total_pulls: number }>;
+}
+
+export interface RLActivePolicyResponse {
+  active_policy: PolicyName;
+  policy_win_rates: Record<PolicyName, number>;
+}
+
+// Extended ProcessVoiceResponse with RL fields
+export interface ProcessVoiceResponseRL extends ProcessVoiceResponse {
+  interaction_id: string;
+  applied_action: RLAction | null;
+  applied_policy: PolicyName | null;
+  implicit_reward: number;
+}
+
+// Feedback submission
+export interface FeedbackRequest {
+  interaction_id: string;
+  score: 1 | -1;
+  text?: string;
+  session_duration?: number;
+}
+
+export interface FeedbackResponse {
+  status: "success" | "error";
+  reward?: number;
+  message?: string;
+}
+
+// ============================================================================
 // API Error
 // ============================================================================
 

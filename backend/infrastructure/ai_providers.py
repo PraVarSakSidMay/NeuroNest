@@ -19,6 +19,12 @@ class LLMProvider:
         expression_history: List[str] = None,
         persona_name: str = None,
         learned_experiences: str = "",
+        user_state=None,
+        memory_layers: dict = None,
+        working_memory=None,
+        conversation_plan=None,
+        compiled_context=None,
+        rl_prompt_instructions: str = "",
     ) -> str:
         try:
             expression_history = expression_history or []
@@ -28,7 +34,13 @@ class LLMProvider:
                 memories, 
                 expression_history, 
                 persona_name,
-                learned_experiences
+                learned_experiences,
+                user_state,
+                memory_layers,
+                working_memory,
+                conversation_plan,
+                compiled_context,
+                rl_prompt_instructions,
             )
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")

@@ -29,6 +29,8 @@ sdist/
 var/
 wheels/
 share/python-wheels/
+# Keep frontend TypeScript lib folder tracked
+!frontend/src/lib/
 *.egg-info/
 .installed.cfg
 *.egg

@@ -12,6 +12,11 @@ from infrastructure.mongodb_repositories import (
     MongoSessionRepository,
     MongoUserRepository,
     MongoEmbeddingRepository,
+    MongoUserStateRepository,
+    MongoMemoryRepository,
+    MongoReflectionRepository,
+    MongoWorkingMemoryRepository,
+    MongoRLRepository,
 )
 from infrastructure.ai_providers import (
     OpenAILLMProvider,
@@ -33,6 +38,11 @@ class Container:
         self.session_repo = MongoSessionRepository()
         self.user_repo = MongoUserRepository()
         self.embedding_repo = MongoEmbeddingRepository()
+        self.user_state_repo = MongoUserStateRepository()
+        self.memory_repo = MongoMemoryRepository()
+        self.reflection_repo = MongoReflectionRepository()
+        self.working_memory_repo = MongoWorkingMemoryRepository()
+        self.rl_repo = MongoRLRepository()
 
         # Provider instances
         self.llm_provider = OpenAILLMProvider()
@@ -61,6 +71,10 @@ class Container:
             session_repo=self.session_repo,
             user_repo=self.user_repo,
             embedding_repo=self.embedding_repo,
+            user_state_repo=self.user_state_repo,
+            memory_repo=self.memory_repo,
+            reflection_repo=self.reflection_repo,
+            working_memory_repo=self.working_memory_repo,
             user_id=self.user_id,
         )
 

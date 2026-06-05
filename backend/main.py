@@ -45,6 +45,10 @@ DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000000"
 async def startup_event():
     await init_db()                    # ensure MongoDB indexes exist
     await interaction_repo.create_user()  # upsert the default user
+    # Initialise and load RL policy engine state from MongoDB
+    from services.rl_service import rl_service
+    rl_service.initialise()
+    await rl_service.load()
     logger.info("NeuroNest Backend Started — MongoDB backend active")
 
 
@@ -207,19 +211,144 @@ async def get_audio(filename: str):
 @app.post("/feedback")
 async def submit_feedback(
     interaction_id: str = Form(...),
-    score: float = Form(...),  # Expecting 1 for positive, -1 for negative
+    score: float = Form(...),          # +1 positive, -1 negative
     text: Optional[str] = Form(None),
+    session_duration: Optional[float] = Form(None),  # seconds, from frontend
 ):
     """
-    Submits user feedback for an interaction.
-    This serves as the 'Reward' signal for the Reinforcement Learning loop.
+    Submits explicit user feedback — primary reward signal for the RL loop.
+
+    On receipt:
+      1. Persists the score against the interaction in MongoDB.
+      2. Loads the interaction to retrieve the stored action vector + policy.
+      3. Composes the full multi-signal reward (feedback + sentiment delta
+         + session duration).
+      4. Calls rl_service.record_reward() to update bandit posteriors online.
     """
     try:
+        from services.rl_service import rl_service
+        from services.rl_policy_engine import ActionVector, PolicyName
+
+        # 1. Persist feedback score
         success = await interaction_repo.submit_feedback(interaction_id, score, text)
-        if success:
-            logger.info(f"RL: Feedback received for {interaction_id}: {score}")
-            return {"status": "success"}
-        return {"status": "error", "message": "Failed to store feedback"}
+        if not success:
+            return {"status": "error", "message": "Failed to store feedback"}
+
+        # 2. Load interaction to get stored RL fields
+        mongo_repo = interaction_repo._repo
+        interaction = await mongo_repo.get_by_id(interaction_id)
+
+        if interaction and interaction.applied_action:
+            try:
+                action      = ActionVector.from_dict(interaction.applied_action)
+                policy_used = PolicyName(interaction.applied_policy or "thompson_sampling")
+            except Exception:
+                action      = None
+                policy_used = None
+
+            if action:
+                # 3. Compose full multi-signal reward
+                reward = rl_service.compose_reward(
+                    user_feedback            = score,
+                    emotion_before           = interaction.emotion_before,
+                    emotion_after            = interaction.emotion_data.emotion if interaction.emotion_data else None,
+                    session_duration_seconds = session_duration,
+                    turn_completed           = True,
+                )
+
+                # 4. Update bandit posteriors (online learning)
+                await rl_service.record_reward(
+                    action         = action,
+                    policy_used    = policy_used,
+                    reward         = reward,
+                    interaction_id = interaction_id,
+                )
+                logger.info(
+                    f"RL: Explicit feedback reward {reward:+.4f} for {interaction_id} "
+                    f"(raw score={score:+.1f})"
+                )
+                return {"status": "success", "reward": reward}
+
+        logger.info(f"RL: Feedback stored for {interaction_id}: {score} (no action vector found)")
+        return {"status": "success", "reward": score}
+
     except Exception as e:
         logger.error(f"Feedback Error: {e}")
         return {"status": "error", "message": str(e)}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# /rl/* — RL Policy Engine Endpoints
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.get("/rl/stats")
+async def rl_stats():
+    """
+    Full policy comparison report.
+
+    Returns per-policy (Thompson Sampling, Epsilon-Greedy, UCB1):
+      - total_pulls, cumulative_reward, win_rate, epsilon
+      - Per-dimension arm rankings with mean reward, alpha/beta, pull count
+    """
+    try:
+        from services.rl_service import rl_service
+        return rl_service.get_policy_report()
+    except Exception as e:
+        logger.error(f"RL stats error: {e}")
+        return {"error": str(e)}
+
+
+@app.get("/rl/rankings")
+async def rl_rankings():
+    """
+    Per-dimension arm rankings aggregated across all policies.
+
+    Dimensions: persona, response_length, questioning_style,
+                motivation_style, detail_level
+    Sorted by average mean reward descending.
+    """
+    try:
+        from services.rl_service import rl_service
+        return rl_service.get_arm_rankings()
+    except Exception as e:
+        logger.error(f"RL rankings error: {e}")
+        return {"error": str(e)}
+
+
+@app.get("/rl/policy")
+async def rl_active_policy():
+    """Returns the currently active (best-performing) policy."""
+    try:
+        from services.rl_service import rl_service
+        report = rl_service.get_policy_report()
+        return {
+            "active_policy": report["active_policy"],
+            "policy_win_rates": {
+                name: data["win_rate"]
+                for name, data in report["policies"].items()
+            },
+        }
+    except Exception as e:
+        logger.error(f"RL policy error: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/rl/reset")
+async def rl_reset():
+    """
+    Resets the RL bandit state to uniform priors.
+    WARNING: Irreversible — all learned arm statistics are wiped.
+    Useful for A/B testing a fresh policy from scratch.
+    """
+    try:
+        from services.rl_service import rl_service
+        from infrastructure.mongodb_repositories import MongoRLRepository
+        repo = MongoRLRepository()
+        await repo.save_state({})
+        rl_service.initialise(repo=repo)
+        await rl_service.load()
+        logger.warning("RL: Bandit state RESET to uniform priors.")
+        return {"status": "reset", "message": "RL bandit state cleared. Learning from scratch."}
+    except Exception as e:
+        logger.error(f"RL reset error: {e}")
+        return {"error": str(e)}

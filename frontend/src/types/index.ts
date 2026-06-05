@@ -19,6 +19,17 @@ export type {
   ValidationError,
   ApiErrorResponse,
   ExpressionHistoryEntry,
+  // RL Policy Engine types
+  PolicyName,
+  RLAction,
+  RLArmStats,
+  RLPolicyStats,
+  RLPolicyReport,
+  RLRankings,
+  RLActivePolicyResponse,
+  ProcessVoiceResponseRL,
+  FeedbackRequest,
+  FeedbackResponse,
 } from "./api";
 
 // Zod schemas

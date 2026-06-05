@@ -1,5 +1,6 @@
 """Conversation orchestration layer for coordinating services and repositories."""
 from typing import Optional
+import asyncio
 import uuid
 import json
 
@@ -18,6 +19,10 @@ from infrastructure.repositories import (
     ISessionRepository,
     IUserRepository,
     IEmbeddingRepository,
+    IUserStateRepository,
+    IMemoryRepository,
+    IReflectionRepository,
+    IWorkingMemoryRepository,
 )
 
 
@@ -39,6 +44,10 @@ class ConversationOrchestrator:
         session_repo: ISessionRepository,
         user_repo: IUserRepository,
         embedding_repo: IEmbeddingRepository,
+        user_state_repo: IUserStateRepository,
+        memory_repo: IMemoryRepository,
+        reflection_repo: IReflectionRepository,
+        working_memory_repo: IWorkingMemoryRepository,
         user_id: str = "00000000-0000-0000-0000-000000000000",
     ):
         self.transcription_provider = transcription_provider
@@ -50,6 +59,10 @@ class ConversationOrchestrator:
         self.session_repo = session_repo
         self.user_repo = user_repo
         self.embedding_repo = embedding_repo
+        self.user_state_repo = user_state_repo
+        self.memory_repo = memory_repo
+        self.reflection_repo = reflection_repo
+        self.working_memory_repo = working_memory_repo
         self.user_id = user_id
         self._voice_bucket = "voice-recordings"
         self._tts_bucket = "ai-responses"
@@ -101,9 +114,46 @@ class ConversationOrchestrator:
             except Exception:
                 pass
 
-        # Step 5: Analyze emotion (using existing service for now)
-        from services.emotion_service import analyze_emotion
-        emotion_dict = analyze_emotion(transcript_text, features_dict, video_features)
+        # Step 5: Analyze emotion
+        from services.emotion_service import EmotionService
+        from services.model_manager import model_manager
+        from services.user_state_service import UserStateService
+        from services.unified_memory_service import UnifiedMemoryService
+        from services.memory_lifecycle_service import MemoryLifecycleService
+        from services.context_ranking_engine import ContextRankingEngine
+        from services.reflection_engine import ReflectionEngine
+        from services.working_memory_service import WorkingMemoryService
+        from services.conversation_planning_engine import ConversationPlanningEngine
+        from services.context_compiler import ContextCompiler
+        from services.rag_service import rag_service
+        
+        emotion_service = EmotionService(model_manager)
+        user_state_service = UserStateService(self.user_state_repo)
+        
+        memory_lifecycle_service = MemoryLifecycleService(self.memory_repo)
+        context_ranking_engine = ContextRankingEngine()
+        unified_memory_service = UnifiedMemoryService(
+            self.memory_repo, 
+            rag_service, 
+            memory_lifecycle_service,
+            context_ranking_engine
+        )
+        
+        reflection_engine = ReflectionEngine(
+            self.reflection_repo, 
+            model_manager, 
+            rag_service
+        )
+        
+        working_memory_service = WorkingMemoryService(
+            self.working_memory_repo,
+            model_manager
+        )
+
+        planning_engine = ConversationPlanningEngine(model_manager)
+        context_compiler = ContextCompiler()
+        
+        emotion_dict = emotion_service.analyze_emotion(transcript_text, features_dict, video_features)
         emotion = Emotion(
             emotion=emotion_dict.get("emotion", "neutral"),
             stress_level=emotion_dict.get("stress_level", 50),
@@ -114,6 +164,19 @@ class ConversationOrchestrator:
             eye_contact_ratio=emotion_dict.get("eye_contact_ratio"),
             head_pose=emotion_dict.get("head_pose"),
         )
+        
+        # Step 5b: Update persistent User State
+        user_state = await user_state_service.update_state(self.user_id, emotion, transcript_text)
+        log_event(
+            logger,
+            "user_state_updated",
+            dominant_emotion=user_state.dominant_emotion,
+            stress_level=user_state.stress_level,
+            recent_topics=user_state.recent_topics,
+        )
+        
+        # Step 5c: Fetch Working Memory
+        working_memory = await working_memory_service.get_memory(self.user_id, session_id)
         
         # Step 6: Retrieve memories
         memories = await self.embedding_repo.find_similar(
@@ -131,15 +194,59 @@ class ConversationOrchestrator:
             except Exception:
                 pass
         
-        # Step 7a: RL Persona Selection
+        # Step 7a: RL Full Action Vector Selection
         from services.rl_service import rl_service
-        persona_stats = await self.interaction_repo.get_persona_performance()
-        applied_persona = await rl_service.select_persona(persona_stats)
+        from services.rl_policy_engine import ActionVector, PolicyName
+
+        # Capture emotion *before* this turn for sentiment-delta reward later
+        prev_user_state = await user_state_service.get_state(self.user_id)
+        emotion_before  = prev_user_state.dominant_emotion.value if prev_user_state else "neutral"
+
+        rl_action, rl_policy = await rl_service.select_action_vector(
+            context={
+                "emotion":       emotion_dict.get("emotion", "neutral"),
+                "stress_level":  emotion_dict.get("stress_level", 50),
+                "is_first_turn": (session is not None and session_id is not None),
+            }
+        )
+        applied_persona = rl_action.persona.value
+        rl_prompt_instructions = rl_service.build_prompt_instructions(rl_action)
 
         # Step 7b: Experience Learning (Few-shot training)
         successful_exps = await self.interaction_repo.get_successful_interactions(limit=3)
         learned_experiences = rl_service.format_experiences(successful_exps)
 
+        # Step 7c: Multi-Layer Memory Retrieval
+        memory_layers = await unified_memory_service.get_contextual_memories(
+            self.user_id, 
+            transcript_text,
+            user_state
+        )
+
+        # Step 7d: Conversation Planning
+        conversation_plan = planning_engine.plan_response(
+            user_message=transcript_text,
+            user_state=user_state,
+            retrieved_memories=memory_layers,
+            emotion_profile=emotion_dict
+        )
+        log_event(
+            logger,
+            "conversation_planned",
+            strategy=conversation_plan.conversation_strategy,
+            intent=conversation_plan.intent,
+            goal=conversation_plan.response_goal
+        )
+        
+        # Step 7e: Compile Context for Response Generation
+        compiled_context = context_compiler.compile(
+            user_state=user_state,
+            working_memory=working_memory,
+            memories=memory_layers,
+            planner_output=conversation_plan,
+            emotion_profile=emotion_dict
+        )
+        
         ai_response = self.llm_provider.generate_response(
             transcript=transcript_text,
             emotion=emotion_dict,
@@ -147,6 +254,12 @@ class ConversationOrchestrator:
             expression_history=expression_list,
             persona_name=applied_persona,
             learned_experiences=learned_experiences,
+            user_state=user_state,
+            memory_layers=memory_layers,
+            working_memory=working_memory,
+            conversation_plan=conversation_plan,
+            compiled_context=compiled_context,
+            rl_prompt_instructions=rl_prompt_instructions,
         )
         
         # Step 8: Generate TTS
@@ -161,7 +274,7 @@ class ConversationOrchestrator:
         if not tts_audio_url and audio_output_path:
             tts_audio_url = f"http://localhost:8000/audio/{audio_output_path.split('/')[-1]}"
         
-        # Step 10: Log interaction
+        # Step 10: Log interaction — store full RL action vector
         interaction = Interaction.create(
             session_id=session_id,
             user_id=self.user_id,
@@ -169,22 +282,64 @@ class ConversationOrchestrator:
             features=audio_features,
             emotion_data=emotion,
             applied_persona=applied_persona,
+            applied_action=rl_action.to_dict(),
+            applied_policy=rl_policy.value,
+            emotion_before=emotion_before,
         ).with_response(
             response_text=ai_response,
             tts_url=tts_audio_url,
         )
         interaction_id = await self.interaction_repo.create(interaction)
+
+        # Step 10b: Immediate implicit reward (turn completed successfully)
+        implicit_reward = rl_service.compose_reward(
+            user_feedback=None,
+            emotion_before=emotion_before,
+            emotion_after=emotion_dict.get("emotion", "neutral"),
+            turn_completed=True,
+        )
+        await rl_service.record_reward(
+            action=rl_action,
+            policy_used=rl_policy,
+            reward=implicit_reward,
+            interaction_id=interaction_id,
+        )
         
+        # Step 11: Store Interaction Memory
+        await unified_memory_service.extract_and_store_memories(
+            self.user_id, 
+            transcript_text, 
+            ai_response, 
+            emotion_dict
+        )
+
+        # Step 11b: Update Working Memory
+        await working_memory_service.update_from_interaction(
+            self.user_id,
+            session_id,
+            interaction
+        )
+
+        # Step 12: Async Reflection Engine (Non-blocking insight generation)
+        asyncio.create_task(reflection_engine.reflect_on_interaction(
+            self.user_id, 
+            interaction, 
+            user_state
+        ))
+
         return {
-            "interaction_id": interaction_id,
-            "transcript": transcript_text,
-            "audio_features": features_dict,
-            "emotion": emotion_dict,
-            "response": ai_response,
-            "audio_url": tts_audio_url,
+            "interaction_id":  interaction_id,
+            "transcript":      transcript_text,
+            "audio_features":  features_dict,
+            "emotion":         emotion_dict,
+            "response":        ai_response,
+            "audio_url":       tts_audio_url,
             "applied_persona": applied_persona,
-            "memories_used": len(memories),
-            "session_id": session_id,
+            "applied_action":  rl_action.to_dict(),
+            "applied_policy":  rl_policy.value,
+            "implicit_reward": implicit_reward,
+            "memories_used":   len(memories),
+            "session_id":      session_id,
         }
     
     async def _upload_raw_audio(self, file_id: str, audio_path: str) -> Optional[str]:
