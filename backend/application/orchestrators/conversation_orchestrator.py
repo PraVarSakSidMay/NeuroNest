@@ -440,8 +440,8 @@ class ConversationOrchestrator:
         ctx.transcript    = transcript or "[Inaudible]"
         ctx.features_dict = features_dict or {}
         ctx.audio_features = AudioFeatures(**{
-            k: ctx.features_dict.get(k, v)
-            for k, v in AudioFeatures().model_fields.items()
+            k: ctx.features_dict[k]
+            for k, v in AudioFeatures.model_fields.items()
             if k in ctx.features_dict
         }) if ctx.features_dict else AudioFeatures()
 
@@ -642,11 +642,12 @@ class ConversationOrchestrator:
         )
 
     async def _compile_context(self, ctx: TurnContext):
+        wm = ctx.working_memory or WorkingMemory.create(self._deps.user_id, ctx.session_id or "unknown")
         return await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: self._deps.context_compiler.compile(
                 user_state        = ctx.user_state,
-                working_memory    = ctx.working_memory,
+                working_memory    = wm,
                 memories          = ctx.memory_layers,
                 planner_output    = ctx.conversation_plan,
                 emotion_profile   = ctx.emotion_dict,
