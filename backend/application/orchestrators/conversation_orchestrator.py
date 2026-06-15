@@ -207,6 +207,7 @@ class TurnContext:
     turn_id:          str
     audio_path:       str
     voice_name:       str
+    metrics:          PipelineMetrics
     frontend_audio:   Optional[dict]   = None   # parsed audio_analysis JSON
     video_features:   Optional[dict]   = None   # parsed video_analysis JSON
     expression_list:  List[Any]        = field(default_factory=list)
@@ -248,8 +249,7 @@ class TurnContext:
     interaction_id:   Optional[str]    = None
     implicit_reward:  float            = 0.0
 
-    # Metrics
-    metrics:          Optional[PipelineMetrics] = None
+    # Metrics (moved to top of class to comply with dataclasses ordering rules)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 from .model_manager import model_manager
 from core.logger import logger
 
@@ -12,12 +13,14 @@ class TranscriptAnalyzer(EmotionAnalyzer):
         return {"transcript": transcript}
 
 class AudioAnalyzer(EmotionAnalyzer):
-    def analyze(self, audio_features: dict) -> dict:
-        hint = audio_features.get("audio_emotion_hint", "") if isinstance(audio_features, dict) else ""
+    def analyze(self, audio_features: Optional[dict]) -> dict:
+        if not isinstance(audio_features, dict):
+            return {"features": {}, "hint": ""}
+        hint = audio_features.get("audio_emotion_hint", "")
         return {"features": audio_features, "hint": hint}
 
 class VideoAnalyzer(EmotionAnalyzer):
-    def analyze(self, video_features: dict) -> dict:
+    def analyze(self, video_features: Optional[dict]) -> dict:
         if not video_features:
             return {}
         info = f"\nVideo Facial Features:\n{json.dumps(video_features, indent=2)}\n"
