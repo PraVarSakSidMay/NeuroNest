@@ -1,31 +1,89 @@
 import os
+# os: used for filesystem path manipulation (UPLOAD_DIR / GENERATED_DIR) and
+# directory creation.
+
 import uuid
+# uuid: used to generate unique filenames/paths for uploaded WebM audio.
+
 import json
+# json: imported for potential JSON operations.
+# (Note: in this file, json is not referenced elsewhere.)
+
 import asyncio
+# asyncio: used for async helpers and background tasks (e.g. embedding generation).
+
 import shutil
+# shutil: used to efficiently copy uploaded file streams to disk.
+
 from typing import Optional
+# Optional: provides typing for optional form fields/arguments.
 
 from fastapi import FastAPI, UploadFile, File, Form, Depends
+# FastAPI: web application framework.
+# UploadFile: request body file type.
+# File / Form: request parameter helpers.
+# Depends: dependency injection for FastAPI.
+
 from fastapi.middleware.cors import CORSMiddleware
+# CORSMiddleware: configures CORS headers so the frontend can call the API.
+
 from fastapi.responses import FileResponse
+# FileResponse: returns a file from disk over HTTP.
 
 from core.config import settings
+# settings: typed configuration (paths, environment variables).
+
 from core.logger import logger
-from core.exceptions import domain_error_handler, http_exception_handler, unhandled_exception_handler
+# logger: structured logger used across the API.
+
+from core.exceptions import (
+    domain_error_handler,
+    http_exception_handler,
+    unhandled_exception_handler,
+)
+# domain_error_handler: handles DomainError exceptions.
+# http_exception_handler: handles FastAPI/HTTP errors (not used in this file).
+# unhandled_exception_handler: handles unexpected exceptions.
+
 from domain.exceptions import DomainError
+# DomainError: base domain exception type.
+
 from models.interaction import InteractionCreate, AudioFeatures, EmotionData
+# Imported domain/data models. Some may be unused in this file but are part of
+# the intended interaction domain.
+
 from repositories.interaction_repo import interaction_repo, InteractionRepository
+# interaction_repo: repository instance (backed by MongoDB via infrastructure).
+# InteractionRepository: protocol/base type for repository operations.
+
 from infrastructure.mongodb_client import init_db, close_db
+# init_db: initializes DB connection and indexes.
+# close_db: closes DB connections.
 
 from services.dashboard_service import update_dashboard
+# update_dashboard: computes/updates a legacy dashboard field from transcript/emotion.
+
 from services.rag_service import rag_service
+# rag_service: Retrieval-Augmented Generation service used for session opener
+# (and potentially other operations).
+
 from di import container
+# container: dependency-injection container holding orchestrator and providers.
 
+# ------------------------------
+# FastAPI application bootstrap
+# ------------------------------
 app = FastAPI(title="NeuroNest Voice Assistant")
+# Create FastAPI app instance.
 
+# Register exception handlers so errors return consistent JSON structures.
 app.add_exception_handler(DomainError, domain_error_handler)
-app.add_exception_handler(Exception, unhandled_exception_handler)
+# When a DomainError is raised, use domain_error_handler to serialize it.
 
+app.add_exception_handler(Exception, unhandled_exception_handler)
+# Catch-all for any other exception types.
+
+# Enable CORS for all origins/methods/headers to support browser frontend calls.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,28 +92,50 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Ensure upload and generated directories exist on disk at startup.
+# These directories are derived from settings.
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 os.makedirs(settings.GENERATED_DIR, exist_ok=True)
 
-# Hardcoded user_id for the single-user hackathon build
+# Hardcoded user_id for the single-user hackathon build.
+# This bypasses user-auth in the demo build.
 DEFAULT_USER_ID = "00000000-0000-0000-0000-000000000000"
 
 
 @app.on_event("startup")
 async def startup_event():
-    await init_db()                    # ensure MongoDB indexes exist
-    await interaction_repo.create_user()  # upsert the default user
-    # Initialise and load RL policy engine state from MongoDB
+    # startup hook runs when the server process starts.
+
+    # Initialize MongoDB (connect + ensure indexes).
+    await init_db()
+
+    # Upsert the default user so downstream pipeline can assume a user exists.
+    await interaction_repo.create_user()
+
+    # Initialize and load RL policy engine state from MongoDB.
+    # Import inside function to keep startup path explicit and avoid import cycles.
     from services.rl_service import rl_service
+
+    # Prepare any in-memory structures for the RL engine.
     rl_service.initialise()
+
+    # Load the latest bandit/policy state from MongoDB into memory.
     await rl_service.load()
+
     logger.info("NeuroNest Backend Started — MongoDB backend active")
+    # Log a successful startup message.
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    # shutdown hook runs when the server process stops.
+
+    # Close MongoDB connections cleanly.
     await close_db()
+
     logger.info("NeuroNest Backend Shutdown — MongoDB connection closed")
+    # Confirm shutdown completion in logs.
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────

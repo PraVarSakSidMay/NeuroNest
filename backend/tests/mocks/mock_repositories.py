@@ -43,6 +43,9 @@ class MockInteractionRepository:
     async def upload_file(self, bucket: str, path: str, file_data: bytes) -> Optional[str]:
         return f"https://mock.storage/{bucket}/{path}"
 
+    async def get_successful_interactions(self, limit: int = 5) -> List[Interaction]:
+        return []
+
 
 class MockSessionRepository:
     """In-memory mock session repository."""

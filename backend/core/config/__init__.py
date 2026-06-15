@@ -94,31 +94,34 @@ class Settings(BaseSettings):
 
 
 # Global settings instance - load from env vars directly
-settings = Settings()
+_settings_instance = Settings()
 
 # Convenience accessors for backward compatibility
-OPENAI_API_KEY = settings.providers.openai_api_key
-GEMINI_API_KEY = settings.providers.gemini_api_key
-GROQ_API_KEY = settings.providers.groq_api_key
-OPENROUTER_API_KEY = settings.providers.openrouter_api_key
-ELEVENLABS_API_KEY = settings.providers.elevenlabs_api_key
-DEEPGRAM_API_KEY = settings.providers.deepgram_api_key
-CARTESIA_API_KEY = settings.providers.cartesia_api_key
-LMNT_API_KEY = settings.providers.lmnt_api_key
-MURF_API_KEY = settings.providers.murf_api_key
-MONGODB_URI = settings.storage.mongodb_uri
-MONGODB_DB = settings.storage.mongodb_db
-UPLOAD_DIR = settings.audio.upload_dir
-GENERATED_DIR = settings.audio.generated_dir
-EMBEDDING_MODEL = settings.rag.embedding_model
-RAG_TOP_K = settings.rag.top_k
+OPENAI_API_KEY = _settings_instance.providers.openai_api_key
+GEMINI_API_KEY = _settings_instance.providers.gemini_api_key
+GROQ_API_KEY = _settings_instance.providers.groq_api_key
+OPENROUTER_API_KEY = _settings_instance.providers.openrouter_api_key
+ELEVENLABS_API_KEY = _settings_instance.providers.elevenlabs_api_key
+DEEPGRAM_API_KEY = _settings_instance.providers.deepgram_api_key
+CARTESIA_API_KEY = _settings_instance.providers.cartesia_api_key
+LMNT_API_KEY = _settings_instance.providers.lmnt_api_key
+MURF_API_KEY = _settings_instance.providers.murf_api_key
+MONGODB_URI = _settings_instance.storage.mongodb_uri
+MONGODB_DB = _settings_instance.storage.mongodb_db
+UPLOAD_DIR = _settings_instance.audio.upload_dir
+GENERATED_DIR = _settings_instance.audio.generated_dir
+EMBEDDING_MODEL = _settings_instance.rag.embedding_model
+RAG_TOP_K = _settings_instance.rag.top_k
 
 # Make settings work with attribute access for legacy code (settings.MONGODB_URI)
 class _SettingsProxy:
     """Proxy allowing attribute-style access to settings and flat config keys."""
     __slots__ = ()
     def __getattr__(self, name):
-        return globals().get(name) or getattr(settings, name, None)
+        if name.startswith('_'):
+             raise AttributeError(name)
+        # First try to get from global scope (convenience accessors), then from _settings_instance
+        return globals().get(name) or getattr(_settings_instance, name, None)
 
-import sys
-sys.modules[__name__].settings = _SettingsProxy()
+# Define settings as a module-level variable so it's discoverable by static analysis
+settings = _SettingsProxy()

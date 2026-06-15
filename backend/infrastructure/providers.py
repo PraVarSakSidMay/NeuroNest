@@ -14,6 +14,11 @@ class ILLMProvider(Protocol):
         expression_history: List[str] = None,
         persona_name: str = None,
         learned_experiences: str = "",
+        user_state=None,
+        memory_layers: dict = None,
+        working_memory=None,
+        conversation_plan=None,
+        compiled_context=None,
     ) -> str:
         """Generate a text response based on transcript, emotion, memories, and expression history."""
         ...

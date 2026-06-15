@@ -536,16 +536,19 @@ class ConversationOrchestrator:
         memory_coro     = self._get_memory_layers(ctx)
         rl_coro         = self._get_rl_action_and_experiences(ctx)
 
-        (memories, _), (memory_layers, _), (rl_result, _) = await asyncio.gather(
+        (memories_res, _), (memory_layers_res, _), (rl_res, _) = await asyncio.gather(
             self._timed_gather("embedding_and_retrieval", embedding_coro, ctx),
             self._timed_gather("memory_layers",           memory_coro,    ctx),
             self._timed_gather("rl_selection",            rl_coro,        ctx),
         )
 
+        memories = memories_res[0] if (memories_res and isinstance(memories_res, tuple)) else []
+        memory_layers = memory_layers_res[0] if (memory_layers_res and isinstance(memory_layers_res, tuple)) else {}
+
         ctx.memories      = memories or []
         ctx.memory_layers = memory_layers or {}
-        if rl_result:
-            ctx.rl_action, ctx.rl_policy, ctx.rl_instructions, ctx.learned_exps = rl_result
+        if rl_res and isinstance(rl_res, tuple) and rl_res[0]:
+            ctx.rl_action, ctx.rl_policy, ctx.rl_instructions, ctx.learned_exps = rl_res[0]
 
         log_event(
             self._logger, "phase_3_complete",

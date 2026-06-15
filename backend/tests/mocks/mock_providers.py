@@ -22,6 +22,8 @@ class MockLLMProvider:
         emotion: dict,
         memories: List[dict],
         expression_history: List[str] = None,
+        *args,
+        **kwargs,
     ) -> str:
         if self.fail:
             raise Exception("Mock LLM failure")
