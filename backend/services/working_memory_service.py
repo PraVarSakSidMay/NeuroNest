@@ -35,7 +35,8 @@ class WorkingMemoryService:
         self, 
         user_id: str, 
         session_id: str, 
-        interaction: Interaction
+        interaction: Interaction,
+        pre_extracted_updates: Optional[dict] = None
     ) -> WorkingMemory:
         """
         Updates working memory based on a new interaction.
@@ -44,8 +45,12 @@ class WorkingMemoryService:
         memory = await self.get_memory(user_id, session_id)
         memory.turn_count += 1
         
-        # 1. Extraction via LLM
-        updates = await self._extract_working_context(interaction, memory)
+        # 1. Extraction via LLM or Pre-extracted Updates
+        if pre_extracted_updates and isinstance(pre_extracted_updates, dict):
+            updates = pre_extracted_updates
+            logger.info("WorkingMemory: Using pre-extracted updates, skipping background LLM call.")
+        else:
+            updates = await self._extract_working_context(interaction, memory)
         
         # 2. Apply Updates
         memory.active_project = updates.get("active_project") or memory.active_project

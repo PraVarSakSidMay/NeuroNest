@@ -37,10 +37,12 @@ class ContextRankingEngine:
         query_embedding: List[float], 
         memories: List[Memory], 
         user_state: UserState,
-        limit: int = 5
+        limit: int = 5,
+        query_text: Optional[str] = None
     ) -> List[Memory]:
         """
         Reranks a list of candidate memories using the multi-factor scoring formula.
+        Prunes memories with very low similarity (<0.35) and no keyword/topic overlap.
         """
         if not memories:
             return []
@@ -50,17 +52,42 @@ class ContextRankingEngine:
         
         scored_memories = []
         for memory in memories:
+            semantic_score = 0.0
+            if memory.embedding:
+                from infrastructure.mongodb_repositories import _cosine_similarity
+                semantic_score = _cosine_similarity(query_embedding, memory.embedding)
+            
+            # Programmatic pruning: similarity < 0.35 and no topic overlap
+            if semantic_score < 0.35:
+                if query_text:
+                    has_overlap = self._has_keyword_overlap(query_text, memory.content)
+                    if not has_overlap:
+                        continue
+                else:
+                    continue
+
             score = self._calculate_final_score(
-                query_embedding, memory, user_state, weights
+                query_embedding, memory, user_state, weights, semantic_score
             )
             scored_memories.append((score, memory))
+
+        if not scored_memories:
+            return []
 
         # 2. Sort by final score descending
         scored_memories.sort(key=lambda x: x[0], reverse=True)
         
-        logger.info(f"Ranking: Reranked {len(memories)} memories. Top score: {scored_memories[0][0]:.4f}")
+        logger.info(f"Ranking: Reranked {len(memories)} memories down to {len(scored_memories)}. Top score: {scored_memories[0][0]:.4f}")
         
         return [m for _, m in scored_memories[:limit]]
+
+    def _has_keyword_overlap(self, query_text: str, memory_content: str) -> bool:
+        query_words = {w.strip(".,?!()\"'").lower() for w in query_text.split() if len(w) > 3}
+        memory_words = {w.strip(".,?!()\"'").lower() for w in memory_content.split() if len(w) > 3}
+        stop_words = {"this", "that", "with", "from", "have", "some", "what", "where", "when", "then", "there", "them"}
+        query_words -= stop_words
+        memory_words -= stop_words
+        return bool(query_words.intersection(memory_words))
 
     def _calculate_dynamic_weights(self, user_state: UserState) -> RankingWeights:
         """
@@ -93,14 +120,17 @@ class ContextRankingEngine:
         query_embedding: List[float], 
         memory: Memory, 
         user_state: UserState,
-        weights: RankingWeights
+        weights: RankingWeights,
+        precalculated_semantic: Optional[float] = None
     ) -> float:
         """
         Calculates: final_score = Σ(factor_score * factor_weight)
         """
         # 1. Semantic Similarity (0.0 - 1.0)
         semantic_score = 0.0
-        if memory.embedding:
+        if precalculated_semantic is not None:
+            semantic_score = precalculated_semantic
+        elif memory.embedding:
             # Cosine similarity helper (assuming it exists in a utils file or similar)
             from infrastructure.mongodb_repositories import _cosine_similarity
             semantic_score = _cosine_similarity(query_embedding, memory.embedding)

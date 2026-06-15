@@ -72,10 +72,10 @@ class EmotionService:
 
         # Parse text/transcript clues (lexical analyzer)
         text_lower = transcript.lower()
-        has_positive_words = any(w in text_lower for w in ["great", "happy", "awesome", "good", "excited", "glad", "wonderful", "cool", "nice", "fun"])
-        has_negative_words = any(w in text_lower for w in ["sad", "terrible", "bad", "unhappy", "depressed", "down", "cry", "hate", "hurt", "pain"])
-        has_anxious_words = any(w in text_lower for w in ["worry", "anxious", "scared", "fear", "nervous", "panic", "stressed", "stress", "afraid"])
-        has_angry_words = any(w in text_lower for w in ["angry", "mad", "pissed", "furious", "hate", "annoyed", "frustrated"])
+        has_positive_words = any(w in text_lower for w in ["great", "happy", "awesome", "good", "excited", "glad", "wonderful", "cool", "nice", "fun", "joy", "delighted", "cheerful", "pleased", "fantastic", "relaxed", "calm", "optimistic", "hopeful", "laugh", "smiling"])
+        has_negative_words = any(w in text_lower for w in ["sad", "terrible", "bad", "unhappy", "depressed", "down", "cry", "hate", "hurt", "pain", "grief", "lonely", "hopeless", "miserable", "worthless", "empty", "tired", "exhausted", "heavy", "broken", "weeping", "sobbing", "dark"])
+        has_anxious_words = any(w in text_lower for w in ["worry", "anxious", "scared", "fear", "nervous", "panic", "stressed", "stress", "afraid", "terrified", "overwhelmed", "jittery", "shaking", "tightness", "breathless", "dread", "uneasy", "tense"])
+        has_angry_words = any(w in text_lower for w in ["angry", "mad", "pissed", "furious", "hate", "annoyed", "frustrated", "irritated", "fuming", "outraged", "resentful", "bitter", "hostile", "screaming", "shouting"])
 
         # Parse audio clues
         is_trembling = False
@@ -84,18 +84,43 @@ class EmotionService:
         pitch_std = 0.0
 
         if isinstance(audio_features, dict):
-            is_trembling = audio_features.get("is_trembling", False)
-            is_whispering = audio_features.get("is_whispering", False)
-            audio_hint = audio_features.get("audio_emotion_hint", "").lower()
-            pitch_std = audio_features.get("pitch_std_dev", audio_features.get("pitch_std", 0.0))
+            trembling_val = audio_features.get("is_trembling", False)
+            is_trembling = trembling_val if trembling_val is not None else False
+            
+            whispering_val = audio_features.get("is_whispering", False)
+            is_whispering = whispering_val if whispering_val is not None else False
+            
+            hint_val = audio_features.get("audio_emotion_hint", "")
+            audio_hint = (hint_val or "").lower()
+            
+            pitch_val = audio_features.get("pitch_std_dev", audio_features.get("pitch_std", 0.0))
+            pitch_std = pitch_val if pitch_val is not None else 0.0
+            
+            jitter_val = audio_features.get("jitter", 0.0)
+            jitter = jitter_val if jitter_val is not None else 0.0
+            
+            vol_val = audio_features.get("volume_std_dev", audio_features.get("vol_std", 0.0))
+            vol_std = vol_val if vol_val is not None else 0.0
+            
+            # Compute physiological stress increment
+            stress_level = 50
+            if jitter > 0.05:
+                stress_level += 15
+            if vol_std > 15.0:
+                stress_level += 10
+            if pitch_std > 25.0:
+                stress_level += 10
             if is_trembling:
-                stress_level = 75
+                stress_level += 15
                 tone = "trembling"
             if is_whispering:
                 tone = "whispering"
+            
+            stress_level = min(100, max(0, stress_level))
 
         # Parse video facial action units (aus)
         eye_contact_ratio = 1.0
+        head_pitch = 0.0
         au6 = 0.0
         au12 = 0.0
         au4 = 0.0
@@ -106,6 +131,8 @@ class EmotionService:
 
         if isinstance(video_features, dict):
             eye_contact_ratio = video_features.get("eye_contact_ratio", 1.0)
+            head_pose = video_features.get("head_pose", {})
+            head_pitch = head_pose.get("pitch", 0.0) if isinstance(head_pose, dict) else 0.0
             aus = video_features.get("actionUnits", {})
             if not aus:
                 aus = video_features.get("action_units", {})
@@ -126,12 +153,12 @@ class EmotionService:
                 # Genuine smile (Duchenne) has cheek raiser (AU6)
                 if au6 > 0.4:
                     fused_emotion = "happy"
-                    stress_level = 20
+                    stress_level = max(stress_level, 20) if stress_level > 50 else 20
                     tone = "excited" if au12 > 0.7 else "calm"
                 else:
                     # Fake smile: lip corner puller without cheek raiser
                     fused_emotion = "neutral"
-                    stress_level = 60
+                    stress_level = max(stress_level, 60) if stress_level > 50 else 60
                     # Check text context to see if they say they are fine but look tense
                     if has_negative_words or has_anxious_words:
                         contradiction_detected = True
@@ -141,64 +168,64 @@ class EmotionService:
             elif au4 > 0.4:
                 if au15 > 0.4 or au1 > 0.4:
                     fused_emotion = "sad"
-                    stress_level = 65
+                    stress_level = max(stress_level, 65) if stress_level > 50 else 65
                     tone = "subdued"
                 else:
                     # anger or frustration
                     fused_emotion = "frustrated" if au10 > 0.3 else "angry"
-                    stress_level = 70
+                    stress_level = max(stress_level, 70) if stress_level > 50 else 70
                     tone = "tense"
             # Inner brow raise (AU1) + Outer brow raise (AU2) without AU12 - anxious or surprised
             elif au1 > 0.4:
                 if au2 > 0.4:
                     fused_emotion = "surprised" if eye_contact_ratio > 0.8 else "fearful"
-                    stress_level = 60
+                    stress_level = max(stress_level, 60) if stress_level > 50 else 60
                 else:
                     fused_emotion = "anxious"
-                    stress_level = 70
+                    stress_level = max(stress_level, 70) if stress_level > 50 else 70
                     tone = "nervous"
             # Lip corner depressor (AU15) - sadness
             elif au15 > 0.4:
                 fused_emotion = "sad"
-                stress_level = 60
+                stress_level = max(stress_level, 60) if stress_level > 50 else 60
                 tone = "subdued"
 
         # 2. Integrate Audio features if video is neutral or absent
         if fused_emotion == "neutral":
             if is_trembling or audio_hint in ["nervous", "anxious", "fearful"]:
                 fused_emotion = "anxious"
-                stress_level = 75
+                stress_level = max(stress_level, 75) if stress_level > 50 else 75
                 tone = "trembling"
             elif audio_hint in ["angry", "frustrated"]:
                 fused_emotion = "frustrated"
-                stress_level = 70
+                stress_level = max(stress_level, 70) if stress_level > 50 else 70
                 tone = "aggressive" if audio_hint == "angry" else "tense"
             elif audio_hint in ["happy", "excited"]:
                 fused_emotion = "happy"
-                stress_level = 30
+                stress_level = max(stress_level, 30) if stress_level > 50 else 30
                 tone = "excited"
             elif audio_hint in ["sad", "depressed"]:
                 fused_emotion = "sad"
-                stress_level = 55
+                stress_level = max(stress_level, 55) if stress_level > 50 else 55
                 tone = "subdued"
 
         # 3. Integrate Text/Sentiment clues to resolve neutral
         if fused_emotion == "neutral":
             if has_positive_words:
                 fused_emotion = "happy"
-                stress_level = 30
+                stress_level = max(stress_level, 30) if stress_level > 50 else 30
                 tone = "calm"
             elif has_angry_words:
                 fused_emotion = "frustrated"
-                stress_level = 65
+                stress_level = max(stress_level, 65) if stress_level > 50 else 65
                 tone = "tense"
             elif has_anxious_words:
                 fused_emotion = "anxious"
-                stress_level = 70
+                stress_level = max(stress_level, 70) if stress_level > 50 else 70
                 tone = "nervous"
             elif has_negative_words:
                 fused_emotion = "sad"
-                stress_level = 60
+                stress_level = max(stress_level, 60) if stress_level > 50 else 60
                 tone = "subdued"
 
         # 4. Check for contradiction between words and physical markers
@@ -213,10 +240,22 @@ class EmotionService:
             stress_level = 95
             tone = "flat" if tone == "calm" else tone
 
+        # 5. Integrate Gaze Avoidance and Head Tilt cues
+        if isinstance(video_features, dict) and video_features:
+            if eye_contact_ratio < 0.50:
+                stress_level = min(100, stress_level + 15)
+                if tone in ["calm", "unknown"]:
+                    tone = "avoidant"
+            if head_pitch > 15.0:  # looking down
+                stress_level = min(100, stress_level + 10)
+                if fused_emotion in ["neutral", "calm"]:
+                    fused_emotion = "sad"
+                    tone = "subdued"
+
         # Assemble result
         result = {
             "emotion": fused_emotion,
-            "stress_level": int(stress_level),
+            "stress_level": stress_level,
             "tone": tone,
             "contradiction_detected": contradiction_detected,
             "hidden_emotion": hidden_emotion

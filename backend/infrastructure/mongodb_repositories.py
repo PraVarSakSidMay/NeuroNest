@@ -105,7 +105,7 @@ class MongoInteractionRepository:
         }
         try:
             await self._col.insert_one(doc)
-            return doc["_id"]
+            return str(doc["_id"])
         except Exception as e:
             logger.error(f"Failed to create interaction: {e}")
             return None
@@ -524,7 +524,7 @@ class MongoUserStateRepository:
             preferred_persona=doc.get("preferred_persona", "the_empathetic_friend"),
             active_projects=[Project(**p) for p in doc.get("active_projects", [])],
             recent_topics=doc.get("recent_topics", []),
-            last_updated=doc.get("last_updated"),
+            last_updated=doc.get("last_updated") or _now_iso(),
         )
 
 
@@ -799,7 +799,7 @@ class MongoWorkingMemoryRepository:
                 "active_topic": memory.active_topic,
                 "current_goal": memory.current_goal,
                 "recent_tasks": [t.__dict__ for t in memory.recent_tasks],
-                "recent_entities": [e.__dict__ for t in memory.recent_entities],
+                "recent_entities": [e.__dict__ for e in memory.recent_entities],
                 "recent_decisions": [d.__dict__ for d in memory.recent_decisions],
                 "last_updated": memory.last_updated.isoformat() if isinstance(memory.last_updated, datetime) else memory.last_updated,
             }
@@ -825,7 +825,7 @@ class MongoWorkingMemoryRepository:
             recent_tasks=[Task(**t) for t in doc.get("recent_tasks", [])],
             recent_entities=[EntityMention(**e) for e in doc.get("recent_entities", [])],
             recent_decisions=[Decision(**d) for d in doc.get("recent_decisions", [])],
-            last_updated=doc.get("last_updated")
+            last_updated=doc.get("last_updated") or _now_iso()
         )
 
 

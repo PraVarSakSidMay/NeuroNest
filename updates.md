@@ -135,8 +135,60 @@ Here is a breakdown of how each component can be optimized to achieve superior p
 
 ---
 
-## 4. Implementation Steps for Next Phase
+## 4. Completed Programmatic Optimizations
 
-1.  **Introduce a Unified Response JSON Schema**: Update `ResponseService` to instruct the LLM to output a JSON object containing `planning`, `working_memory_updates`, and `response`.
-2.  **Code a FACS Rule Engine in `EmotionService`**: Define a Python dictionary and logic parser that evaluates `audio_features` and `video_features` directly.
-3.  **Refactor background execution**: Modify the orchestrator to trigger reflection on a batch schedule or session-close event instead of Phase 7 background task schedule on every turn.
+The following programmatic optimization achievements have been successfully implemented:
+1. **Programmatic Emotion Fusion (`backend/services/emotion_service.py`)**: Replaced the sequential LLM-based fusion with a deterministic FACS action units, acoustic indicators, and text sentiment analyzer. Latency dropped from **~5s** to **<1ms**.
+2. **Programmatic Dialogue Strategy & Response Planning (`backend/services/conversation_planning_engine.py`)**: Replaced the sequential planner LLM call with a fast rules-based keyword classifier mapping conversation strategies and goals. Latency dropped from **~4s** to **<1ms**.
+3. **Programmatic MCP Wellness Telemetry Summary (`backend/mcp_server.py`)**: Replaced LLM summaries with a rules-based telemetry parser calculating stress, gaze avoidance, and clinical discussion points dynamically. Reports load in **<1ms**.
+4. **Heuristic-Triggered Working Memory Extraction (`backend/services/working_memory_service.py`)**: Introduced keyword-based filters and frequency checks (every 3rd turn) to bypass background extraction LLM calls.
+5. **Batched Reflection Schedule (`backend/application/orchestrators/conversation_orchestrator.py`)**: Programmed the reflection engine to run asynchronously every 5 turns instead of on every single turn, cutting reflection API calls by **80%**.
+
+---
+
+## 5. Upcoming Pre-processing & LLM-Bypass Strategies (Pre-Refining Cognitive Data)
+
+To make the system even less dependent on LLM API calls and ensure the LLM receives highly refined, high-quality, and pre-digested context, the following features are proposed for implementation:
+
+### A. Programmatic Crisis Intervention LLM Bypass (Zero-LLM Safety Guard)
+*   **Concept**: For life-safety and crisis situations, relying on LLM generation introduces latency and the risk of hallucination or failure.
+*   **Pre-processing Solution**: Implement an immediate programmatic bypass in `ConversationOrchestrator`:
+    *   Match the transcript against an offline set of high-sensitivity trigger phrases (e.g. self-harm, suicide).
+    *   If matched, completely skip Phase 5 (LLM response generation) and instantly return a pre-formatted, warm, clinical safety response with 988 lifeline numbers.
+*   **Benefits**:
+    *   **Latency**: Drops from **~4s** to **<1ms** on high-stress inputs.
+    *   **Safety**: 100% deterministic compliance with zero LLM hallucination risks.
+
+### B. Co-Generation Schema Integration (Consolidating to a Single LLM Call)
+*   **Concept**: Completely eliminate background LLM calls for working memory extraction by combining them into the main response generation.
+*   **Pre-processing Solution**: 
+    *   Update the master system prompt to direct the response generation LLM to output a single structured JSON containing the conversational response, active projects, goals, newly identified tasks, and decisions.
+    *   The orchestrator parses the JSON, updates the local working memory state programmatically, and returns the response field to the client.
+*   **Benefits**:
+    *   Reduces the total count of LLM calls per turn to exactly **one**, eliminating background API overhead completely.
+
+### C. Keyword-Based RAG Memory Pruning & Context Compression
+*   **Concept**: Raw semantic memory search (RAG) retrieves full historic conversations, adding unnecessary tokens and noise to the prompt.
+*   **Pre-processing Solution**:
+    *   **Dynamic Thresholding**: Filter retrieved candidate memories based on cosine similarity score, discarding any memory below a threshold of `0.35`.
+    *   **Lexical Topic Overlap**: Verify if candidate memories share key nouns or topics with the current user transcript. Discard memories with zero noun/concept overlap.
+    *   **Context Cropping**: Instead of injecting full user transcripts and AI responses, crop the injected memory string to a maximum of 150 characters centering on the overlapping keyword.
+*   **Benefits**:
+    *   Reduces prompt context window size by **50%–70%**, lowering token consumption and preventing the LLM from getting distracted by old, irrelevant details.
+
+### D. Deterministic UserState Delta & Alert Telemetry
+*   **Concept**: The LLM shouldn't have to compute or infer trends from raw logs or historical arrays.
+*   **Pre-processing Solution**:
+    *   Programmatically compute stress delta: `delta = current_stress_level - prior_stress_level`.
+    *   If `delta > 25`, inject: `[STATE_ALERT: User stress has surged significantly (+X%) this turn]`.
+    *   If eye contact drops below `0.5` after previously being high, inject: `[STATE_ALERT: User is showing severe gaze avoidance; suggest low-pressure conversational pacing]`.
+*   **Benefits**:
+    *   Delivers pre-digested behavioral insights directly to the LLM system prompt, ensuring the LLM acts on refined, clean facts rather than raw data logs.
+
+### E. Dynamic System Prompt Pruning (Strategy-Specific Prompt Injectors)
+*   **Concept**: Injecting instructions for every possible conversation strategy (COACHING, TEACHING, DEBUGGING, etc.) into every prompt wastes tokens.
+*   **Pre-processing Solution**:
+    *   After the rules-based planning engine selects the `ConversationStrategy`, dynamically inject *only* the specific behavioral micro-instructions for that chosen strategy (e.g. only coaching questions or only debugging loops).
+*   **Benefits**:
+    *   Keeps the system prompt highly focused, improving instructions adherence and saving prompt token overhead.
+

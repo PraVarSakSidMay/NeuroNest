@@ -22,7 +22,8 @@ class ContextCompiler:
         memories: Dict[str, List[Memory]],
         planner_output: ConversationPlan,
         emotion_profile: dict,
-        reflections: List[Reflection] = None
+        reflections: Optional[List[Reflection]] = None,
+        prior_stress: int = 50
     ) -> CompiledContext:
         """
         Orchestrates the compilation process.
@@ -30,7 +31,7 @@ class ContextCompiler:
         logger.info("ContextCompiler: Compiling cognitive context")
         
         # 1. Compile Emotional State
-        emotional_state = self._compile_emotional_state(emotion_profile, user_state)
+        emotional_state = self._compile_emotional_state(emotion_profile, user_state, prior_stress)
         
         # 2. Compile User Summary & State
         user_summary = self._compile_user_summary(user_state)
@@ -65,13 +66,18 @@ class ContextCompiler:
             total_estimated_tokens=estimated_tokens
         )
 
-    def _compile_emotional_state(self, profile: dict, state: UserState) -> str:
-        """Fuses real-time profile with persistent state trends."""
+    def _compile_emotional_state(self, profile: dict, state: UserState, prior_stress: int = 50) -> str:
+        """Fuses real-time profile with persistent state trends and calculates delta."""
         emotion = profile.get("emotion", "neutral").upper()
         tone = profile.get("tone", "calm")
         stress = profile.get("stress_level", 50)
         
-        return f"EMOTION: {emotion} | TONE: {tone} | STRESS: {stress}/100 | TREND: {state.dominant_emotion}"
+        trend = f"TREND: {state.dominant_emotion}"
+        stress_delta = stress - prior_stress
+        if stress_delta > 20:
+            trend += f" | ALERT: User stress level has surged significantly by {stress_delta}% since last turn!"
+        
+        return f"EMOTION: {emotion} | TONE: {tone} | STRESS: {stress}/100 | {trend}"
 
     def _compile_user_summary(self, state: UserState) -> str:
         """Brief summary of the user's interaction style and recent context."""
@@ -104,6 +110,24 @@ class ContextCompiler:
         if plan.confidence < 0.4:
             constraints.append("Be cautious; intent unclear.")
             
+        # Strategy-specific behavioral micro-instructions
+        from domain.value_objects import ConversationStrategy
+        strat = plan.conversation_strategy
+        if strat == ConversationStrategy.COACHING:
+            constraints.append("Ask powerful open-ended questions. Don't give answers; help them find their own.")
+        elif strat == ConversationStrategy.TEACHING:
+            constraints.append("Break down concepts simply. Use analogies. Check for understanding.")
+        elif strat == ConversationStrategy.EMOTIONAL_SUPPORT:
+            constraints.append("Focus entirely on validation and empathy. 'I hear you' and 'That sounds really tough' are your tools.")
+        elif strat == ConversationStrategy.DEBUGGING:
+            constraints.append("Be systematic. Identify the error, isolate the cause, and test solutions one by one.")
+        elif strat == ConversationStrategy.BRAINSTORMING:
+            constraints.append("Say 'Yes, and...'. Encourage wild ideas. Don't judge too early.")
+        elif strat == ConversationStrategy.MOTIVATION:
+            constraints.append("High energy, focus on the 'why', and celebrate small wins.")
+        elif strat == ConversationStrategy.CASUAL:
+            constraints.append("Keep it low-key and friendly. No pressure.")
+
         return strategy, " ".join(constraints)
 
     def _compile_memories(self, memories: Dict[str, List[Memory]], reflections: Optional[List[Reflection]]) -> str:
@@ -115,7 +139,10 @@ class ContextCompiler:
         if reflections:
             for r in reflections[:3]:
                 if r.content not in seen_content:
-                    formatted.append(f"[INSIGHT] {r.content}")
+                    content = r.content.strip()
+                    if len(content) > 150:
+                        content = content[:147] + "..."
+                    formatted.append(f"[INSIGHT] {content}")
                     seen_content.add(r.content)
         
         # 2. Prioritize specific memory types
@@ -126,7 +153,10 @@ class ContextCompiler:
             for m in items[:3]: # Limit per type for token efficiency
                 content = m.content.strip()
                 if content not in seen_content:
-                    formatted.append(f"[{m_type.upper()}] {content}")
+                    formatted_content = content
+                    if len(formatted_content) > 150:
+                        formatted_content = formatted_content[:147] + "..."
+                    formatted.append(f"[{m_type.upper()}] {formatted_content}")
                     seen_content.add(content)
                     
         return "\n".join(formatted)

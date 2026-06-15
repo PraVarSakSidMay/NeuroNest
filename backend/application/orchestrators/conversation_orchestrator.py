@@ -249,6 +249,10 @@ class TurnContext:
     interaction_id:   Optional[str]    = None
     implicit_reward:  float            = 0.0
 
+    # Programmatic pre-processing additions
+    working_memory_updates: Optional[dict] = None
+    prior_stress:     int              = 50
+
     # Metrics (moved to top of class to comply with dataclasses ordering rules)
 
 
@@ -345,20 +349,38 @@ class ConversationOrchestrator:
             # ── Phase 2: Cognition ────────────────────────────────────
             await self._phase_2_cognition(ctx)
 
-            # ── Phase 3: Memory & RL ──────────────────────────────────
-            await self._phase_3_memory_rl(ctx)
+            # Check for crisis keywords (pre-processing bypass)
+            crisis_keywords = ["kill myself", "suicide", "end my life", "hurt myself"]
+            transcript_lower = ctx.transcript.lower()
+            is_crisis = any(kw in transcript_lower for kw in crisis_keywords)
 
-            # ── Phase 4: Planning & Context Compilation ───────────────
-            await self._phase_4_planning(ctx)
+            if is_crisis:
+                self._logger.warning("Crisis trigger detected - bypassing normal flow", turn_id=turn_id)
+                ctx.metrics.mark_degraded("crisis bypass triggered")
+                await self._phase_5_generation(ctx, is_crisis=True)
+                await self._phase_6_persistence(ctx)
+                if ctx.interaction_id:
+                    asyncio.create_task(
+                        self._safe_background(
+                            "store_embedding",
+                            self._store_embedding(ctx),
+                        )
+                    )
+            else:
+                # ── Phase 3: Memory & RL ──────────────────────────────────
+                await self._phase_3_memory_rl(ctx)
 
-            # ── Phase 5: Generation ───────────────────────────────────
-            await self._phase_5_generation(ctx)
+                # ── Phase 4: Planning & Context Compilation ───────────────
+                await self._phase_4_planning(ctx)
 
-            # ── Phase 6: Persistence ──────────────────────────────────
-            await self._phase_6_persistence(ctx)
+                # ── Phase 5: Generation ───────────────────────────────────
+                await self._phase_5_generation(ctx)
 
-            # ── Phase 7: Background tasks (fire-and-forget) ───────────
-            self._phase_7_background(ctx)
+                # ── Phase 6: Persistence ──────────────────────────────────
+                await self._phase_6_persistence(ctx)
+
+                # ── Phase 7: Background tasks (fire-and-forget) ───────────
+                self._phase_7_background(ctx)
 
         except Exception as exc:
             self._logger.error(
@@ -511,6 +533,7 @@ class ConversationOrchestrator:
             prior_state.dominant_emotion.value
             if prior_state else "neutral"
         )
+        ctx.prior_stress = prior_state.stress_level if prior_state else 50
         ctx.user_state    = user_state
         ctx.working_memory = working_memory
 
@@ -651,6 +674,7 @@ class ConversationOrchestrator:
                 memories          = ctx.memory_layers,
                 planner_output    = ctx.conversation_plan,
                 emotion_profile   = ctx.emotion_dict,
+                prior_stress      = ctx.prior_stress,
             ),
         )
 
@@ -658,21 +682,49 @@ class ConversationOrchestrator:
     # PHASE 5 — Response Generation
     # ═══════════════════════════════════════════════════════════════════════
 
-    async def _phase_5_generation(self, ctx: TurnContext) -> None:
+    async def _phase_5_generation(self, ctx: TurnContext, is_crisis: bool = False) -> None:
         """
         Sequential:
-          1. LLM response generation (critical, retried)
+          1. LLM response generation (critical, retried) / or crisis bypass
           2. TTS synthesis         (non-critical, degrades to browser TTS)
         """
-        ai_response = await self._timed_stage(
-            "llm_generation",
-            self._generate_response(ctx),
-            ctx, critical=True, retries=MAX_RETRIES,
-        )
-        ctx.ai_response = ai_response or (
-            "I hear you. Let me think about that for a moment — "
-            "could you tell me a little more?"
-        )
+        if is_crisis:
+            ctx.ai_response = (
+                "I'm so sorry you're feeling this way, and I want you to be safe. "
+                "Please know you are not alone. You can connect with compassionate, trained people right now: "
+                "call or text the Suicide & Crisis Lifeline at 988 (available 24/7, free, and confidential). "
+                "Please reach out to them."
+            )
+            ctx.metrics.record(StageResult(
+                stage="llm_generation_bypass", success=True, duration_ms=0.0
+            ))
+        else:
+            ai_response = await self._timed_stage(
+                "llm_generation",
+                self._generate_response(ctx),
+                ctx, critical=True, retries=MAX_RETRIES,
+            )
+            if ai_response:
+                raw_response = ai_response.strip()
+                if "```json" in raw_response:
+                    raw_response = raw_response.split("```json")[1].split("```")[0].strip()
+                elif "```" in raw_response:
+                    raw_response = raw_response.split("```")[1].split("```")[0].strip()
+                
+                try:
+                    parsed = json.loads(raw_response)
+                    if isinstance(parsed, dict) and "response" in parsed:
+                        ctx.ai_response = parsed["response"]
+                        ctx.working_memory_updates = parsed.get("working_memory_updates")
+                    else:
+                        ctx.ai_response = ai_response
+                except Exception:
+                    ctx.ai_response = ai_response
+            else:
+                ctx.ai_response = (
+                    "I hear you. Let me think about that for a moment — "
+                    "could you tell me a little more?"
+                )
 
         audio_path = await self._timed_stage(
             "tts_synthesis",
@@ -840,6 +892,7 @@ class ConversationOrchestrator:
                         self._deps.user_id,
                         ctx.session_id or "",
                         interaction_snapshot,
+                        ctx.working_memory_updates,
                     ),
                 )
             )

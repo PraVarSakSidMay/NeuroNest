@@ -121,29 +121,59 @@ VOICE_MAPPING = {
 
 
 # ─────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
 # 1. ElevenLabs — most human, best emotional voice
 # ─────────────────────────────────────────────────────────────────────
-def tts_elevenlabs(text: str, filename: str, voice_name: str = "Rachel") -> str | None:
+def tts_elevenlabs(text: str, filename: str, voice_name: str = "Rachel", emotion: str = "neutral") -> str | None:
     if not settings.ELEVENLABS_API_KEY:
         return None
     if _tts_rate_tracker.is_rate_limited("elevenlabs"):
         return None
     try:
         from elevenlabs.client import ElevenLabs
+        from elevenlabs import VoiceSettings
+        
         client = ElevenLabs(api_key=settings.ELEVENLABS_API_KEY)
         voice_id = VOICE_MAPPING.get(voice_name, VOICE_MAPPING["Rachel"])["elevenlabs"]
+        
+        # Dynamic voice settings based on emotion
+        stability = 0.50
+        style = 0.0
+        
+        emotion_lower = emotion.lower().strip()
+        if emotion_lower in ["sad", "depressed", "grief"]:
+            stability = 0.35
+            style = 0.20
+        elif emotion_lower in ["anxious", "fearful", "panic"]:
+            stability = 0.40
+            style = 0.15
+        elif emotion_lower in ["happy", "excited"]:
+            stability = 0.45
+            style = 0.15
+        elif emotion_lower in ["angry", "frustrated"]:
+            stability = 0.30
+            style = 0.25
+            
+        voice_settings = VoiceSettings(
+            stability=stability,
+            similarity_boost=0.75,
+            style=style,
+            use_speaker_boost=True
+        )
+        
         audio = client.text_to_speech.convert(
             voice_id=voice_id,
             text=text,
             model_id="eleven_multilingual_v2",
             output_format="mp3_44100_128",
+            voice_settings=voice_settings,
         )
         with open(filename, "wb") as f:
             for chunk in audio:
                 if chunk:
                     f.write(chunk)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: OK ElevenLabs ({voice_name})")
+            logger.info(f"TTS: OK ElevenLabs ({voice_name}, emotion={emotion})")
             _tts_rate_tracker.clear("elevenlabs")
             return filename
         if os.path.exists(filename):
@@ -160,7 +190,7 @@ def tts_elevenlabs(text: str, filename: str, voice_name: str = "Rachel") -> str 
 # ─────────────────────────────────────────────────────────────────────
 # 2. Cartesia — low latency
 # ─────────────────────────────────────────────────────────────────────
-def tts_cartesia(text: str, filename: str, voice_name: str = "Rachel") -> str | None:
+def tts_cartesia(text: str, filename: str, voice_name: str = "Rachel", emotion: str = "neutral") -> str | None:
     if not settings.CARTESIA_API_KEY:
         return None
     if _tts_rate_tracker.is_rate_limited("cartesia"):
@@ -186,7 +216,7 @@ def tts_cartesia(text: str, filename: str, voice_name: str = "Rachel") -> str | 
             else:
                 f.write(audio_response)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: OK Cartesia ({voice_name})")
+            logger.info(f"TTS: OK Cartesia ({voice_name}, emotion={emotion})")
             _tts_rate_tracker.clear("cartesia")
             return filename
         if os.path.exists(filename):
@@ -203,7 +233,7 @@ def tts_cartesia(text: str, filename: str, voice_name: str = "Rachel") -> str | 
 # ─────────────────────────────────────────────────────────────────────
 # 3. Deepgram Aura-2 — ultra-realistic voices
 # ─────────────────────────────────────────────────────────────────────
-def tts_deepgram(text: str, filename: str, voice_name: str = "Rachel") -> str | None:
+def tts_deepgram(text: str, filename: str, voice_name: str = "Rachel", emotion: str = "neutral") -> str | None:
     if not settings.DEEPGRAM_API_KEY:
         return None
     if _tts_rate_tracker.is_rate_limited("deepgram"):
@@ -214,8 +244,6 @@ def tts_deepgram(text: str, filename: str, voice_name: str = "Rachel") -> str | 
         client = DeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
         model_id = VOICE_MAPPING.get(voice_name, VOICE_MAPPING["Rachel"])["deepgram"]
         
-        # In SDK 7.x, the generate method returns an iterator of bytes.
-        # We must specify encoding="mp3" to match our expected file format.
         audio_iterator = client.speak.v1.audio.generate(
             text=text,
             model=model_id,
@@ -227,7 +255,7 @@ def tts_deepgram(text: str, filename: str, voice_name: str = "Rachel") -> str | 
                 f.write(chunk)
                 
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: OK Deepgram ({voice_name} Aura-2)")
+            logger.info(f"TTS: OK Deepgram ({voice_name} Aura-2, emotion={emotion})")
             _tts_rate_tracker.clear("deepgram")
             return filename
         
@@ -245,15 +273,34 @@ def tts_deepgram(text: str, filename: str, voice_name: str = "Rachel") -> str | 
 # ─────────────────────────────────────────────────────────────────────
 # 4. OpenAI TTS — robust fallback
 # ─────────────────────────────────────────────────────────────────────
-def tts_openai(text: str, filename: str, voice_name: str = "Rachel") -> str | None:
+def tts_openai(text: str, filename: str, voice_name: str = "Rachel", emotion: str = "neutral") -> str | None:
     if not settings.OPENAI_API_KEY:
         return None
     if _tts_rate_tracker.is_rate_limited("openai_tts"):
         return None
     try:
-        from openai import OpenAI, RateLimitError as OpenAIRateLimitError
+        from openai import OpenAI
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        voice_id = VOICE_MAPPING.get(voice_name, VOICE_MAPPING["Rachel"])["openai"]
+        
+        gender = VOICE_MAPPING.get(voice_name, VOICE_MAPPING["Rachel"]).get("gender", "female")
+        emotion_lower = emotion.lower().strip()
+        
+        # Dynamic voice selection based on gender and emotion
+        if gender == "female":
+            if emotion_lower in ["sad", "depressed", "anxious", "fearful"]:
+                voice_id = "alloy"  # Soft, comforting
+            elif emotion_lower in ["happy", "excited"]:
+                voice_id = "shimmer"  # Bright, cheerful
+            else:
+                voice_id = VOICE_MAPPING.get(voice_name, VOICE_MAPPING["Rachel"])["openai"]
+        else:
+            if emotion_lower in ["sad", "depressed", "anxious", "fearful"]:
+                voice_id = "echo"  # Warm, comforting
+            elif emotion_lower in ["happy", "excited"]:
+                voice_id = "nova"  # Bright
+            else:
+                voice_id = VOICE_MAPPING.get(voice_name, VOICE_MAPPING["Rachel"])["openai"]
+
         response = client.audio.speech.create(
             model="tts-1",
             voice=voice_id,
@@ -261,7 +308,7 @@ def tts_openai(text: str, filename: str, voice_name: str = "Rachel") -> str | No
         )
         response.stream_to_file(filename)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: OK OpenAI ({voice_name})")
+            logger.info(f"TTS: OK OpenAI ({voice_name}, voice={voice_id}, emotion={emotion})")
             _tts_rate_tracker.clear("openai_tts")
             return filename
         return None
@@ -276,7 +323,7 @@ def tts_openai(text: str, filename: str, voice_name: str = "Rachel") -> str | No
 # ─────────────────────────────────────────────────────────────────────
 # 5. LMNT — warm, soothing voices
 # ─────────────────────────────────────────────────────────────────────
-def tts_lmnt(text: str, filename: str, voice_name: str = "Rachel") -> str | None:
+def tts_lmnt(text: str, filename: str, voice_name: str = "Rachel", emotion: str = "neutral") -> str | None:
     if not settings.LMNT_API_KEY:
         return None
     if _tts_rate_tracker.is_rate_limited("lmnt"):
@@ -299,7 +346,7 @@ def tts_lmnt(text: str, filename: str, voice_name: str = "Rachel") -> str | None
         with open(filename, "wb") as f:
             f.write(response.content)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: OK LMNT ({voice_name})")
+            logger.info(f"TTS: OK LMNT ({voice_name}, emotion={emotion})")
             _tts_rate_tracker.clear("lmnt")
             return filename
         if os.path.exists(filename):
@@ -316,7 +363,7 @@ def tts_lmnt(text: str, filename: str, voice_name: str = "Rachel") -> str | None
 # ─────────────────────────────────────────────────────────────────────
 # 6. Murf AI — professional neural voices
 # ─────────────────────────────────────────────────────────────────────
-def tts_murf(text: str, filename: str, voice_name: str = "Rachel") -> str | None:
+def tts_murf(text: str, filename: str, voice_name: str = "Rachel", emotion: str = "neutral") -> str | None:
     if not settings.MURF_API_KEY:
         return None
     if _tts_rate_tracker.is_rate_limited("murf"):
@@ -346,13 +393,12 @@ def tts_murf(text: str, filename: str, voice_name: str = "Rachel") -> str | None
         audio_url = data.get("audioFile") or data.get("audio_file")
         if not audio_url:
             return None
-        # Download the audio file
         audio_resp = requests.get(audio_url, timeout=30)
         audio_resp.raise_for_status()
         with open(filename, "wb") as f:
             f.write(audio_resp.content)
         if os.path.exists(filename) and os.path.getsize(filename) > 1000:
-            logger.info(f"TTS: OK Murf AI ({voice_name})")
+            logger.info(f"TTS: OK Murf AI ({voice_name}, emotion={emotion})")
             _tts_rate_tracker.clear("murf")
             return filename
         if os.path.exists(filename):
@@ -389,7 +435,7 @@ def generate_tts(text: str, emotion: str, voice_name: str = "Rachel") -> str | N
 
     for provider_fn in providers:
         try:
-            result = provider_fn(text, filename, voice_name)
+            result = provider_fn(text, filename, voice_name, emotion)
             if result:
                 return result
         except Exception as e:

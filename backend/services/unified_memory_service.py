@@ -86,7 +86,8 @@ class UnifiedMemoryService:
             query_embedding=embedding,
             memories=candidates,
             user_state=user_state,
-            limit=5  # Final top-k context window
+            limit=5,  # Final top-k context window
+            query_text=query_text
         )
         
         # 3. Group by type and update access count
