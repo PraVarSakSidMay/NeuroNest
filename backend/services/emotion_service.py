@@ -46,9 +46,8 @@ class EmotionService:
     def analyze_emotion(self, transcript, audio_features, video_features=None):
         """
         Main entry point for emotion fusion.
-        1. Analyzes each modality independently.
-        2. Builds a comprehensive reasoning prompt for the LLM.
-        3. Parses and enriches the final results with raw telemetry.
+        Determines the emotion, stress level, tone, and contradiction
+        safely and programmatically without LLM calls.
         """
         # Independent modality analysis
         t_data = self.transcript_analyzer.analyze(transcript)
@@ -56,21 +55,171 @@ class EmotionService:
         v_data = self.video_analyzer.analyze(video_features)
 
         logger.info(
-            "Emotion fusion processing started",
+            "Emotion fusion processing programmatically",
             transcript_preview=transcript[:120],
             video_present=bool(video_features),
         )
 
-        # Build the multimodal reasoning prompt
-        prompt = self._build_prompt(t_data, a_data, v_data)
-        
-        # Use LLM to perform high-level cross-modal reasoning
-        content = self.model_manager.get_llm_response(transcript, prompt, json_mode=True)
-        
-        # Parse the JSON response from the LLM
-        result = self._parse_result(content)
-        
-        # Enrich the parsed result with raw telemetry (eye contact, head pose, etc.)
+        # Baseline values
+        fused_emotion = "neutral"
+        stress_level = 50
+        tone = "calm"
+        contradiction_detected = False
+        hidden_emotion = ""
+
+        # Parse text/transcript clues (lexical analyzer)
+        text_lower = transcript.lower()
+        has_positive_words = any(w in text_lower for w in ["great", "happy", "awesome", "good", "excited", "glad", "wonderful", "cool", "nice", "fun"])
+        has_negative_words = any(w in text_lower for w in ["sad", "terrible", "bad", "unhappy", "depressed", "down", "cry", "hate", "hurt", "pain"])
+        has_anxious_words = any(w in text_lower for w in ["worry", "anxious", "scared", "fear", "nervous", "panic", "stressed", "stress", "afraid"])
+        has_angry_words = any(w in text_lower for w in ["angry", "mad", "pissed", "furious", "hate", "annoyed", "frustrated"])
+
+        # Parse audio clues
+        is_trembling = False
+        is_whispering = False
+        audio_hint = ""
+        pitch_std = 0.0
+
+        if isinstance(audio_features, dict):
+            is_trembling = audio_features.get("is_trembling", False)
+            is_whispering = audio_features.get("is_whispering", False)
+            audio_hint = audio_features.get("audio_emotion_hint", "").lower()
+            pitch_std = audio_features.get("pitch_std_dev", audio_features.get("pitch_std", 0.0))
+            if is_trembling:
+                stress_level = 75
+                tone = "trembling"
+            if is_whispering:
+                tone = "whispering"
+
+        # Parse video facial action units (aus)
+        eye_contact_ratio = 1.0
+        au6 = 0.0
+        au12 = 0.0
+        au4 = 0.0
+        au15 = 0.0
+        au1 = 0.0
+        au2 = 0.0
+        au10 = 0.0
+
+        if isinstance(video_features, dict):
+            eye_contact_ratio = video_features.get("eye_contact_ratio", 1.0)
+            aus = video_features.get("actionUnits", {})
+            if not aus:
+                aus = video_features.get("action_units", {})
+            if aus:
+                au1 = aus.get("AU01", aus.get("au1", aus.get("AU1", 0.0)))
+                au2 = aus.get("AU02", aus.get("au2", aus.get("AU2", 0.0)))
+                au4 = aus.get("AU04", aus.get("au4", aus.get("AU4", 0.0)))
+                au6 = aus.get("AU06", aus.get("au6", aus.get("AU6", 0.0)))
+                au10 = aus.get("AU10", aus.get("au10", aus.get("AU10", 0.0)))
+                au12 = aus.get("AU12", aus.get("au12", aus.get("AU12", 0.0)))
+                au15 = aus.get("AU15", aus.get("au15", aus.get("AU15", 0.0)))
+
+        # Rule-based fusion logic
+        # 1. Start with Video FACS (priority)
+        if isinstance(video_features, dict) and video_features:
+            # Smile detected
+            if au12 > 0.4:
+                # Genuine smile (Duchenne) has cheek raiser (AU6)
+                if au6 > 0.4:
+                    fused_emotion = "happy"
+                    stress_level = 20
+                    tone = "excited" if au12 > 0.7 else "calm"
+                else:
+                    # Fake smile: lip corner puller without cheek raiser
+                    fused_emotion = "neutral"
+                    stress_level = 60
+                    # Check text context to see if they say they are fine but look tense
+                    if has_negative_words or has_anxious_words:
+                        contradiction_detected = True
+                        hidden_emotion = "sad" if has_negative_words else "anxious"
+                        fused_emotion = "confused"
+            # Brow furrowed (AU4) - anger, concentration, frustration, or sadness
+            elif au4 > 0.4:
+                if au15 > 0.4 or au1 > 0.4:
+                    fused_emotion = "sad"
+                    stress_level = 65
+                    tone = "subdued"
+                else:
+                    # anger or frustration
+                    fused_emotion = "frustrated" if au10 > 0.3 else "angry"
+                    stress_level = 70
+                    tone = "tense"
+            # Inner brow raise (AU1) + Outer brow raise (AU2) without AU12 - anxious or surprised
+            elif au1 > 0.4:
+                if au2 > 0.4:
+                    fused_emotion = "surprised" if eye_contact_ratio > 0.8 else "fearful"
+                    stress_level = 60
+                else:
+                    fused_emotion = "anxious"
+                    stress_level = 70
+                    tone = "nervous"
+            # Lip corner depressor (AU15) - sadness
+            elif au15 > 0.4:
+                fused_emotion = "sad"
+                stress_level = 60
+                tone = "subdued"
+
+        # 2. Integrate Audio features if video is neutral or absent
+        if fused_emotion == "neutral":
+            if is_trembling or audio_hint in ["nervous", "anxious", "fearful"]:
+                fused_emotion = "anxious"
+                stress_level = 75
+                tone = "trembling"
+            elif audio_hint in ["angry", "frustrated"]:
+                fused_emotion = "frustrated"
+                stress_level = 70
+                tone = "aggressive" if audio_hint == "angry" else "tense"
+            elif audio_hint in ["happy", "excited"]:
+                fused_emotion = "happy"
+                stress_level = 30
+                tone = "excited"
+            elif audio_hint in ["sad", "depressed"]:
+                fused_emotion = "sad"
+                stress_level = 55
+                tone = "subdued"
+
+        # 3. Integrate Text/Sentiment clues to resolve neutral
+        if fused_emotion == "neutral":
+            if has_positive_words:
+                fused_emotion = "happy"
+                stress_level = 30
+                tone = "calm"
+            elif has_angry_words:
+                fused_emotion = "frustrated"
+                stress_level = 65
+                tone = "tense"
+            elif has_anxious_words:
+                fused_emotion = "anxious"
+                stress_level = 70
+                tone = "nervous"
+            elif has_negative_words:
+                fused_emotion = "sad"
+                stress_level = 60
+                tone = "subdued"
+
+        # 4. Check for contradiction between words and physical markers
+        if has_positive_words and (stress_level > 65 or fused_emotion in ["sad", "anxious", "angry", "frustrated"]):
+            contradiction_detected = True
+            hidden_emotion = fused_emotion
+            fused_emotion = "confused"
+
+        # Special check: self-harm phrases override emotion to high-stress depressed/anxious
+        if "kill myself" in text_lower or "suicide" in text_lower or "end my life" in text_lower:
+            fused_emotion = "depressed"
+            stress_level = 95
+            tone = "flat" if tone == "calm" else tone
+
+        # Assemble result
+        result = {
+            "emotion": fused_emotion,
+            "stress_level": int(stress_level),
+            "tone": tone,
+            "contradiction_detected": contradiction_detected,
+            "hidden_emotion": hidden_emotion
+        }
+
+        # Enrich result with raw telemetry (eye contact, head pose, etc.)
         return self._enrich_result(result, audio_features, video_features)
 
     def _build_prompt(self, t_data, a_data, v_data):

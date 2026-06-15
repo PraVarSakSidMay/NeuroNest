@@ -1,15 +1,14 @@
-
 import json
 from typing import List, Dict, Optional
 from domain.entities import UserState, Memory
-from domain.value_objects import ConversationPlan, ConversationStrategy, Emotion
+from domain.value_objects import ConversationPlan, ConversationStrategy
 from services.model_manager import ModelManager
 from core.logger import logger
 
 class ConversationPlanningEngine:
     """
     Engine responsible for high-level conversation planning.
-    Analyzes user message and context to select a response strategy before LLM generation.
+    Analyzes user message and context to select a response strategy programmatically.
     """
     
     def __init__(self, model_manager: ModelManager):
@@ -23,78 +22,94 @@ class ConversationPlanningEngine:
         emotion_profile: dict
     ) -> ConversationPlan:
         """
-        Determines the optimal conversation strategy and response goal.
+        Determines the optimal conversation strategy and response goal programmatically.
         """
-        logger.info("Planning: Generating strategic plan for response")
+        logger.info("Planning: Generating strategic plan programmatically")
         
-        # 1. Prepare Context Summary for the Planner
-        memory_summary = self._summarize_memories(retrieved_memories)
+        msg_lower = user_message.lower()
         
-        # 2. Build Planner Prompt
-        planner_prompt = f"""
-        You are a Conversation Planning Architect. Analyze the current turn and context to decide on the best strategy.
+        # 1. Detect Intent Category
+        intent_desc = "General conversation"
+        strategy = ConversationStrategy.CASUAL
+        response_goal = "Respond naturally and maintain the conversation"
+        risk_level = 1
         
-        INPUT:
-        - User Message: "{user_message}"
-        - User State (Dominant Emotion): {user_state.dominant_emotion}
-        - User State (Active Projects): {[p.name for p in user_state.active_projects]}
-        - Emotion Profile (Fused): {emotion_profile}
-        - Relevant Memories: {memory_summary}
+        # Keyword list match helpers
+        is_debug = any(w in msg_lower for w in ["error", "exception", "bug", "crash", "fail", "broken", "issue", "debug", "doesn't work", "not working", "traceback", "syntax", "code", "programming", "python", "javascript", "typescript", "c++", "c#", "java"])
+        is_teach = any(w in msg_lower for w in ["how does", "why does", "explain", "teach me", "what is", "what are", "how to", "tutorial", "learn", "concept", "define", "meaning of"])
+        is_brainstorm = any(w in msg_lower for w in ["ideas", "brainstorm", "suggest", "alternatives", "invent", "create", "innovate", "what if", "generate ideas", "creative options"])
+        is_motivate = any(w in msg_lower for w in ["lazy", "stuck", "unmotivated", "procrastinat", "cannot focus", "tired", "don't want to", "help me start", "discipline", "lack energy"])
+        is_coach = any(w in msg_lower for w in ["improve", "grow", "better", "plan", "career", "life goal", "habit", "advice", "guide", "how do i handle", "feedback", "routine"])
         
-        STRATEGIES:
-        - coaching: Helping the user grow, find their own solutions, or improve skills.
-        - teaching: Explaining complex concepts, providing new information, or tutoring.
-        - emotional_support: Prioritizing validation, comfort, empathy, and active listening.
-        - debugging: Helping solve a technical, logical, or step-by-step problem.
-        - brainstorming: Generating creative ideas, exploring possibilities, and divergent thinking.
-        - motivation: Providing energy, encouragement, drive, and accountability.
-        - casual: General friendly, low-stakes conversation.
+        user_emotion = emotion_profile.get("emotion", "neutral").lower()
+        is_emotional = user_emotion in ["sad", "depressed", "anxious", "fearful", "frustrated", "angry"] or any(w in msg_lower for w in ["feel", "feeling", "upset", "hurt", "grief", "lonely", "worried", "sad", "scared", "pain", "panic"])
+
+        # Crisis check (safety first)
+        is_crisis = any(w in msg_lower for w in ["kill myself", "suicide", "end my life", "hurt myself"])
         
-        TASK:
-        Identify the user's intent and emotional need, then select the most effective strategy.
-        
-        Return JSON strictly in this format:
-        {{
-          "intent": "Brief description of what the user wants",
-          "emotional_need": "Brief description of the user's emotional state/need",
-          "conversation_strategy": "one of the strategies listed above",
-          "response_goal": "The specific objective of the upcoming AI response",
-          "risk_level": 1-5 (5 is highest risk/sensitivity),
-          "confidence": 0.0 - 1.0
-        }}
-        """
-        
-        # 3. Use LLM to generate the plan
-        response_text = self.model_manager.get_llm_response(
-            transcript=user_message,
-            system_prompt=planner_prompt,
-            json_mode=True
+        # Determine strategy priority
+        if is_crisis:
+            strategy = ConversationStrategy.EMOTIONAL_SUPPORT
+            intent_desc = "Crisis self-harm statement"
+            response_goal = "Provide immediate, unconditional safety validation and point to resources"
+            risk_level = 5
+        elif is_emotional:
+            strategy = ConversationStrategy.EMOTIONAL_SUPPORT
+            intent_desc = f"Discussing feelings of {user_emotion}"
+            response_goal = "Validate emotional state, offer active listening, comfort, and support"
+            risk_level = 3 if user_emotion in ["sad", "depressed", "angry"] else 2
+        elif is_debug:
+            strategy = ConversationStrategy.DEBUGGING
+            intent_desc = "Solve a technical or coding issue"
+            response_goal = "Help step-by-step to diagnose, debug, and correct the error/bug"
+            risk_level = 1
+        elif is_teach:
+            strategy = ConversationStrategy.TEACHING
+            intent_desc = "Learn about a concept or mechanism"
+            response_goal = "Explain the topic clearly and conceptually, checking for understanding"
+            risk_level = 1
+        elif is_brainstorm:
+            strategy = ConversationStrategy.BRAINSTORMING
+            intent_desc = "Generate creative ideas or plans"
+            response_goal = "Explore divergent possibilities and present creative suggestions"
+            risk_level = 1
+        elif is_motivate:
+            strategy = ConversationStrategy.MOTIVATION
+            intent_desc = "Seeking motivation or focus assistance"
+            response_goal = "Provide encouragement, accountability, and a small starting action step"
+            risk_level = 1
+        elif is_coach:
+            strategy = ConversationStrategy.COACHING
+            intent_desc = "Personal growth or goal guidance"
+            response_goal = "Ask open-ended coaching questions to guide the user towards their own solution"
+            risk_level = 1
+        else:
+            strategy = ConversationStrategy.CASUAL
+            intent_desc = "General chat"
+            response_goal = "Respond with warm, casual, and friendly engagement"
+            risk_level = 1
+
+        # Map emotional need based on emotion and strategy
+        emotional_need = "Cognitive engagement"
+        if is_crisis:
+            emotional_need = "Immediate safety support"
+        elif user_emotion in ["sad", "depressed"]:
+            emotional_need = "Empathy and validation"
+        elif user_emotion in ["anxious", "fearful"]:
+            emotional_need = "Grounding and reassurance"
+        elif user_emotion in ["angry", "frustrated"]:
+            emotional_need = "Vent release and de-escalation"
+        elif user_emotion in ["happy", "excited"]:
+            emotional_need = "Shared positive validation"
+
+        return ConversationPlan(
+            intent=intent_desc,
+            emotional_need=emotional_need,
+            conversation_strategy=strategy,
+            response_goal=response_goal,
+            risk_level=risk_level,
+            confidence=0.9
         )
-        
-        # 4. Parse and return the plan
-        try:
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            
-            plan_data = json.loads(response_text)
-            
-            return ConversationPlan(
-                intent=plan_data.get("intent", "General interaction"),
-                emotional_need=plan_data.get("emotional_need", "None detected"),
-                conversation_strategy=ConversationStrategy(plan_data.get("conversation_strategy", "casual")),
-                response_goal=plan_data.get("response_goal", "Maintain friendly conversation"),
-                risk_level=plan_data.get("risk_level", 1),
-                confidence=plan_data.get("confidence", 0.5)
-            )
-        except Exception as e:
-            logger.error(f"Planning: Failed to generate plan, falling back to casual: {e}")
-            return ConversationPlan(
-                intent="General chat",
-                emotional_need="Unknown",
-                conversation_strategy=ConversationStrategy.CASUAL,
-                response_goal="Respond naturally",
-                confidence=0.1
-            )
 
     def _summarize_memories(self, memories: Dict[str, List[Memory]]) -> str:
         """Helper to create a concise summary of retrieved memories for the planner."""

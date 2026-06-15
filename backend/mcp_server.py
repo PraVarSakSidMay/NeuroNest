@@ -264,6 +264,100 @@ async def export_clinical_report_data(
     return {"format": report_format, "filepath": str(path), "summary": summary}
 
 
+def generate_telemetry_clinical_overview(summary: dict, timeline: list) -> str:
+    """Generates a concise, clinical, therapist-facing overview programmatically."""
+    avg_stress = summary.get("average_stress")
+    dom_emotion = summary.get("dominant_emotion", "neutral")
+    avg_gaze = summary.get("average_eye_contact")
+    contradiction_rate = summary.get("contradiction_rate", 0.0)
+    interaction_count = summary.get("interaction_count", 0)
+
+    # 1. Analyze stress levels
+    stress_status = "stable"
+    if avg_stress is not None:
+        if avg_stress > 70:
+            stress_status = "severe (clinical elevation)"
+        elif avg_stress > 50:
+            stress_status = "moderate (borderline elevation)"
+        else:
+            stress_status = "low/mild (stable baseline)"
+            
+    # 2. Analyze gaze/eye-contact
+    gaze_status = "normal"
+    if avg_gaze is not None:
+        if avg_gaze < 0.6:
+            gaze_status = "significantly reduced (potential avoidance or fatigue)"
+        elif avg_gaze < 0.8:
+            gaze_status = "mildly reduced"
+        else:
+            gaze_status = "strong/sustained (good engagement)"
+
+    # 3. Analyze emotional indicators & contradictions
+    contradiction_status = "no significant patterns of emotional masking detected"
+    if contradiction_rate > 0.3:
+        contradiction_status = f"significant emotional masking/suppression detected (occurs in {contradiction_rate*100:.1f}% of exchanges)"
+    elif contradiction_rate > 0.1:
+        contradiction_status = f"occasional emotional masking detected (occurs in {contradiction_rate*100:.1f}% of exchanges)"
+
+    # 4. Formulate risk flags
+    risk_flags = []
+    self_harm_phrases = ["kill myself", "suicide", "end my life", "hurt myself"]
+    for item in timeline:
+        t_text = item.get("transcript", "").lower()
+        if any(ph in t_text for ph in self_harm_phrases):
+            risk_flags.append("- [CRITICAL] Self-harm or suicide mention detected in recent session transcript.")
+            break
+            
+    if avg_stress is not None and avg_stress > 75:
+        risk_flags.append("- [HIGH RISK] Severe stress spikes detected (>75 average).")
+    if avg_gaze is not None and avg_gaze < 0.5:
+        risk_flags.append("- [RISK FLAG] Sustained eye-gaze avoidance/gaze drops (<50% average).")
+
+    if not risk_flags:
+        risk_flags_str = "No active risk flags detected."
+    else:
+        risk_flags_str = "\n".join(risk_flags)
+
+    # 5. Formulate discussion suggestions
+    discussion_areas = []
+    if dom_emotion in ["anxious", "fearful"]:
+        discussion_areas.append("- Discuss somatic anxiety management techniques (e.g. box-breathing, grounding).")
+        discussion_areas.append("- Explore triggers related to upcoming events or uncertainty.")
+    elif dom_emotion in ["sad", "depressed"]:
+        discussion_areas.append("- Focus on emotional validation and behavioral activation.")
+        discussion_areas.append("- Investigate feelings of exhaustion, dejection, or low energy.")
+    elif dom_emotion in ["angry", "frustrated"]:
+        discussion_areas.append("- Facilitate constructive venting and de-escalation.")
+        discussion_areas.append("- Explore underlying boundary violations or unresolved conflicts.")
+    else:
+        discussion_areas.append("- Conduct general check-in on active projects and cognitive goals.")
+        discussion_areas.append("- Support self-directed problem solving (coaching style).")
+
+    if contradiction_rate > 0.2:
+        discussion_areas.append("- Probe gently on differences between facial micro-expressions (e.g. tension/smiling incongruity) and literal words.")
+
+    discussion_str = "\n".join(discussion_areas)
+
+    overview = f"""CLINICAL TELEMETRY OVERVIEW (PROGRAMMATIC ANALYSIS)
+======================================================
+1. PATTERNS & PROFILE:
+   - Dominant Fused Emotion: {str(dom_emotion).upper()}
+   - Average Stress Level: {avg_stress if avg_stress is not None else 'N/A'}/100 ({stress_status})
+   - Average Gaze Ratio: {avg_gaze*100 if avg_gaze is not None else 'N/A'}% ({gaze_status})
+   - Interaction Count: {interaction_count} total exchanges analyzed.
+
+2. EMOTIONAL CONGRUENCE:
+   - Status: {contradiction_status}
+
+3. ACTIVE RISK FLAGS:
+{risk_flags_str}
+
+4. SUGGESTED THERAPEUTIC DISCUSSION AREAS:
+{discussion_str}
+"""
+    return overview
+
+
 async def generate_clinical_summary_data(last_sessions: int = 20) -> dict[str, Any]:
     interactions = await _fetch_recent_interactions(last_sessions=last_sessions)
     summary = summarize_interactions(interactions)
@@ -280,23 +374,7 @@ async def generate_clinical_summary_data(last_sessions: int = 20) -> dict[str, A
         for doc in recent
     ]
 
-    try:
-        from services.model_manager import model_manager
-
-        prompt = (
-            "Write a concise therapist-facing clinical overview from this "
-            "wellness telemetry. Avoid diagnosis. Focus on patterns, changes, "
-            "risk flags, strengths, and suggested discussion areas.\n\n"
-            f"Summary:\n{json.dumps(summary, indent=2)}\n\n"
-            f"Recent timeline:\n{json.dumps(timeline, indent=2)}"
-        )
-        text = model_manager.get_llm_response("", prompt, json_mode=False)
-    except Exception as exc:
-        text = (
-            "Clinical summary generation was unavailable. "
-            f"Telemetry summary: {json.dumps(summary, default=str)}. Error: {exc}"
-        )
-
+    text = generate_telemetry_clinical_overview(summary, timeline)
     return {"summary": text, "metrics": summary, "recent_interactions": timeline}
 
 

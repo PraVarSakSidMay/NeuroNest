@@ -90,53 +90,79 @@ class WorkingMemoryService:
         return memory
 
     async def _extract_working_context(self, interaction: Interaction, memory: WorkingMemory) -> dict:
-        """Calls LLM to parse the interaction for working memory updates."""
-        prompt = f"""
-        You are a Working Memory Extractor. Analyze the current turn and update the working context.
+        """Calls LLM to parse the interaction for working memory updates, with heuristic batching."""
+        transcript_lower = interaction.transcript.lower()
+        keywords = ["todo", "task", "decide", "decision", "project", "goal", "solve", "plan", "finish", "done", "complete", "need to"]
+        has_keywords = any(kw in transcript_lower for kw in keywords)
         
-        CURRENT CONTEXT:
-        - Active Project: {memory.active_project}
-        - Active Problem: {memory.active_problem}
-        - Current Goal: {memory.current_goal}
-        
-        NEW TURN:
-        - User: "{interaction.transcript}"
-        - AI: "{interaction.response_text}"
-        
-        TASK:
-        Identify if any of the following changed or were mentioned:
-        1. active_project: The high-level project (e.g., "Building a birdhouse").
-        2. active_problem: The specific roadblock (e.g., "Missing nails").
-        3. active_topic: The current subject of talk.
-        4. current_goal: What the user is trying to achieve right now.
-        5. new_tasks: Specific actionable items mentioned.
-        6. new_decisions: Choices made by the user.
-        7. entities: Named entities (People, Tech, Places).
-        
-        Return JSON strictly in this format:
-        {{
-          "active_project": "string or null",
-          "active_problem": "string or null",
-          "active_topic": "string or null",
-          "current_goal": "string or null",
-          "new_tasks": ["string"],
-          "new_decisions": [{{ "content": "string", "rationale": "string" }}],
-          "entities": [{{ "name": "string", "type": "string" }}]
-        }}
-        """
-        
-        response = self.model_manager.get_llm_response(
-            transcript=interaction.transcript,
-            system_prompt=prompt,
-            json_mode=True
-        )
-        
-        try:
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0].strip()
-            return json.loads(response)
-        except:
-            return {}
+        # Trigger LLM extraction only if keywords are found or on every 3rd turn
+        if has_keywords or (memory.turn_count % 3 == 0):
+            prompt = f"""
+            You are a Working Memory Extractor. Analyze the current turn and update the working context.
+            
+            CURRENT CONTEXT:
+            - Active Project: {memory.active_project}
+            - Active Problem: {memory.active_problem}
+            - Current Goal: {memory.current_goal}
+            
+            NEW TURN:
+            - User: "{interaction.transcript}"
+            - AI: "{interaction.response_text}"
+            
+            TASK:
+            Identify if any of the following changed or were mentioned:
+            1. active_project: The high-level project (e.g., "Building a birdhouse").
+            2. active_problem: The specific roadblock (e.g., "Missing nails").
+            3. active_topic: The current subject of talk.
+            4. current_goal: What the user is trying to achieve right now.
+            5. new_tasks: Specific actionable items mentioned.
+            6. new_decisions: Choices made by the user.
+            7. entities: Named entities (People, Tech, Places).
+            
+            Return JSON strictly in this format:
+            {{
+              "active_project": "string or null",
+              "active_problem": "string or null",
+              "active_topic": "string or null",
+              "current_goal": "string or null",
+              "new_tasks": ["string"],
+              "new_decisions": [{{ "content": "string", "rationale": "string" }}],
+              "entities": [{{ "name": "string", "type": "string" }}]
+            }}
+            """
+            
+            try:
+                response = self.model_manager.get_llm_response(
+                    transcript=interaction.transcript,
+                    system_prompt=prompt,
+                    json_mode=True
+                )
+                if "```json" in response:
+                    response = response.split("```json")[1].split("```")[0].strip()
+                return json.loads(response)
+            except Exception as e:
+                logger.error(f"WorkingMemory: LLM extraction failed: {e}")
+                return {}
+        else:
+            # Lightweight programmatic entity extraction
+            entities = []
+            tech_keywords = ["python", "react", "mongodb", "supabase", "docker", "git", "fastapi", "next.js", "nodejs", "sql", "openai", "gemini"]
+            for word in interaction.transcript.split():
+                clean_word = word.strip(".,?!()\"'").lower()
+                if clean_word in tech_keywords:
+                    entities.append({"name": clean_word.capitalize(), "type": "Technology"})
+                elif word.istitle() and len(clean_word) > 3:
+                    entities.append({"name": clean_word.capitalize(), "type": "Concept"})
+
+            return {
+                "active_project": None,
+                "active_problem": None,
+                "active_topic": None,
+                "current_goal": None,
+                "new_tasks": [],
+                "new_decisions": [],
+                "entities": entities[:3]
+            }
 
     async def _prune_and_summarize(self, memory: WorkingMemory):
         """

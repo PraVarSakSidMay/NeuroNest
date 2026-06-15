@@ -841,16 +841,17 @@ class ConversationOrchestrator:
                 )
             )
 
-            asyncio.create_task(
-                self._safe_background(
-                    "reflection_engine",
-                    self._deps.reflection_engine.reflect_on_interaction(
-                        self._deps.user_id,
-                        interaction_snapshot,
-                        ctx.user_state,
-                    ),
+            if ctx.working_memory and ctx.working_memory.turn_count % 5 == 0:
+                asyncio.create_task(
+                    self._safe_background(
+                        "reflection_engine",
+                        self._deps.reflection_engine.reflect_on_interaction(
+                            self._deps.user_id,
+                            interaction_snapshot,
+                            ctx.user_state,
+                        ),
+                    )
                 )
-            )
 
         log_event(self._logger, "phase_7_tasks_scheduled", turn_id=ctx.turn_id)
 
