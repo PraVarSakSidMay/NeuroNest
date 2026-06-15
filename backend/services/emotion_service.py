@@ -124,10 +124,11 @@ class EmotionService:
         au6 = 0.0
         au12 = 0.0
         au4 = 0.0
+        au9 = 0.0   # Nose wrinkle — primary disgust marker
+        au10 = 0.0  # Upper lip raise — secondary disgust marker
         au15 = 0.0
         au1 = 0.0
         au2 = 0.0
-        au10 = 0.0
 
         if isinstance(video_features, dict):
             eye_contact_ratio = video_features.get("eye_contact_ratio", 1.0)
@@ -141,6 +142,7 @@ class EmotionService:
                 au2 = aus.get("AU02", aus.get("au2", aus.get("AU2", 0.0)))
                 au4 = aus.get("AU04", aus.get("au4", aus.get("AU4", 0.0)))
                 au6 = aus.get("AU06", aus.get("au6", aus.get("AU6", 0.0)))
+                au9 = aus.get("AU09", aus.get("au9", aus.get("AU9", 0.0)))
                 au10 = aus.get("AU10", aus.get("au10", aus.get("AU10", 0.0)))
                 au12 = aus.get("AU12", aus.get("au12", aus.get("AU12", 0.0)))
                 au15 = aus.get("AU15", aus.get("au15", aus.get("AU15", 0.0)))
@@ -148,8 +150,14 @@ class EmotionService:
         # Rule-based fusion logic
         # 1. Start with Video FACS (priority)
         if isinstance(video_features, dict) and video_features:
+            # Disgust detection (must precede sad — they share AU4/AU15)
+            # AU9 (nose wrinkle) is the definitive disgust marker, not present in sadness
+            if au9 > 0.35 or (au9 > 0.20 and au10 > 0.20):
+                fused_emotion = "disgusted"
+                stress_level = max(stress_level, 60) if stress_level > 50 else 60
+                tone = "tense"
             # Smile detected
-            if au12 > 0.4:
+            elif au12 > 0.4:
                 # Genuine smile (Duchenne) has cheek raiser (AU6)
                 if au6 > 0.4:
                     fused_emotion = "happy"
@@ -166,7 +174,9 @@ class EmotionService:
                         fused_emotion = "confused"
             # Brow furrowed (AU4) - anger, concentration, frustration, or sadness
             elif au4 > 0.4:
-                if au15 > 0.4 or au1 > 0.4:
+                # AU15 (lip depressor) + AU1 (inner brow raise) → sadness
+                # But only if AU9 (nose wrinkle) is absent; otherwise it's disgust
+                if (au15 > 0.4 or au1 > 0.4) and au9 < 0.25:
                     fused_emotion = "sad"
                     stress_level = max(stress_level, 65) if stress_level > 50 else 65
                     tone = "subdued"
@@ -180,12 +190,18 @@ class EmotionService:
                 if au2 > 0.4:
                     fused_emotion = "surprised" if eye_contact_ratio > 0.8 else "fearful"
                     stress_level = max(stress_level, 60) if stress_level > 50 else 60
+                elif au15 > 0.4 and au9 < 0.25:
+                    # AU1 (inner brow raise) + AU15 (lip depressor) = grief/sadness (Ekman AU1+15)
+                    # Only when AU9 (nose wrinkle) is absent — otherwise still disgust territory
+                    fused_emotion = "sad"
+                    stress_level = max(stress_level, 65) if stress_level > 50 else 65
+                    tone = "subdued"
                 else:
                     fused_emotion = "anxious"
                     stress_level = max(stress_level, 70) if stress_level > 50 else 70
                     tone = "nervous"
-            # Lip corner depressor (AU15) - sadness
-            elif au15 > 0.4:
+            # Lip corner depressor (AU15) - sadness ONLY if nose wrinkle is absent
+            elif au15 > 0.4 and au9 < 0.25:
                 fused_emotion = "sad"
                 stress_level = max(stress_level, 60) if stress_level > 50 else 60
                 tone = "subdued"

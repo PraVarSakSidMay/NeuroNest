@@ -66,6 +66,9 @@ const PROFILES: Record<EmotionType, EmotionProfile> = {
       mouthSmileLeft: -6.0, mouthSmileRight: -6.0,
       browDownLeft: 1.5, browDownRight: 1.5,
       mouthLowerDownLeft: 2.0, mouthLowerDownRight: 2.0,
+      // Disgust discriminators: nose sneer and upper lip raise strongly OPPOSE sadness
+      noseSneerLeft: -5.0, noseSneerRight: -5.0,
+      mouthUpperUpLeft: -3.0, mouthUpperUpRight: -3.0,
     },
     bias: -0.5,
     eyeContactWeight: -2.0,
@@ -124,13 +127,15 @@ const PROFILES: Record<EmotionType, EmotionProfile> = {
   },
   disgusted: {
     features: {
-      noseSneerLeft: 6.0, noseSneerRight: 6.0,
-      mouthUpperUpLeft: 6.0, mouthUpperUpRight: 6.0,
-      mouthFrownLeft: 3.0, mouthFrownRight: 3.0,
-      browDownLeft: 2.0, browDownRight: 2.0,
+      noseSneerLeft: 8.0, noseSneerRight: 8.0,       // Primary disgust marker (AU9)
+      mouthUpperUpLeft: 6.0, mouthUpperUpRight: 6.0,  // Secondary: upper lip raise (AU10)
+      mouthFrownLeft: 2.0, mouthFrownRight: 2.0,     // Shared with sad but weaker here
+      browDownLeft: 2.5, browDownRight: 2.5,
       eyeSquintLeft: 2.0, eyeSquintRight: 2.0,
+      // Disgust does NOT have inner brow raise — oppose browInnerUp (grief marker)
+      browInnerUp: -4.0,
     },
-    bias: -1.0,
+    bias: -1.5,   // Slightly higher threshold: disgust requires strong evidence
     eyeContactWeight: -0.5,
     pitchWeight: 0.5,
   },
@@ -309,12 +314,23 @@ export class EmotionClassifier {
       const mouthPress = (getVal("mouthPressLeft") + getVal("mouthPressRight")) / 2;
       const mouthRoll = (getVal("mouthRollUpper") + getVal("mouthRollLower")) / 2;
 
-      // 1. Disgust-Smile Override
-      const disgustFactor = Math.max(noseSneer, mouthUpperUp);
-      if (disgustFactor > 0.12) {
-        logits["disgusted"] += disgustFactor * 12.0;
-        logits["happy"] -= disgustFactor * 15.0;
-        logits["excited"] -= disgustFactor * 15.0;
+      // 1. Disgust Dual-Marker Gate (noseSneer = AU9 AND mouthUpperUp = AU10 must both fire)
+      //    This prevents a slight lip-curl or speaking-face frown from triggering disgust.
+      const disgustPrimary   = (noseSneer > 0.18) ? noseSneer : 0;   // AU9 threshold
+      const disgustSecondary = (mouthUpperUp > 0.12) ? mouthUpperUp : 0; // AU10 threshold
+      const disgustFactor    = Math.sqrt(disgustPrimary * disgustSecondary); // geometric mean requires BOTH
+
+      if (disgustPrimary > 0.18) {
+        // Strong nose sneer present — push disgust up, suppress sad/happy
+        logits["disgusted"] += disgustPrimary * 14.0;
+        logits["sad"]       -= disgustPrimary * 8.0;  // Sad wrongly wins when noseSneer is high
+        logits["happy"]     -= disgustPrimary * 15.0;
+        logits["excited"]   -= disgustPrimary * 15.0;
+      } else if (disgustFactor > 0) {
+        // Both markers present at low level — moderate boost
+        logits["disgusted"] += disgustFactor * 10.0;
+        logits["happy"]     -= disgustFactor * 12.0;
+        logits["excited"]   -= disgustFactor * 12.0;
       }
 
       // 2. Upper-Face Validation for Happy (Prevents lip-sync/talking false positives)
@@ -345,7 +361,13 @@ export class EmotionClassifier {
       const mouthShrug = getVal("mouthShrugLower");
 
       if (mouthFrown > 0.2 || mouthShrug > 0.2) {
-        if (browInnerUp > 0.12 || getVal("eyeBlinkLeft") > 0.3 || getVal("eyeBlinkRight") > 0.3) {
+        // If nose sneer is prominent this is disgust NOT sadness — add extra gate
+        if (noseSneer > 0.18) {
+          // Nose sneer + mouth frown = disgust (not sad)
+          logits["sad"]       -= 6.0;
+          logits["depressed"] -= 6.0;
+        } else if (browInnerUp > 0.12 || getVal("eyeBlinkLeft") > 0.3 || getVal("eyeBlinkRight") > 0.3) {
+          // Inner brow raise (grief AU) confirms sadness
           logits["sad"] += 2.0;
           logits["depressed"] += 2.0;
         } else {

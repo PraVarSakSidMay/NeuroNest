@@ -426,6 +426,77 @@ class TestProgrammaticOptimizations:
         assert res_2["stress_level"] == 60
         assert res_2["tone"] == "whispering"
 
+    def test_emotion_service_disgust_vs_sadness(self):
+        """
+        Verify that the backend FACS fusion correctly separates disgust from sadness.
+        - Disgust = AU9 (nose wrinkle) must fire BEFORE sadness is considered
+        - Sadness = AU15 (lip depressor) + AU1 (inner brow) with NO nose wrinkle
+        """
+        from services.emotion_service import EmotionService
+
+        mock_mm = MagicMock()
+        service = EmotionService(mock_mm)
+
+        # Case 1: Strong AU9 (nose wrinkle) alone → disgusted
+        res = service.analyze_emotion(
+            "It smells horrible",
+            audio_features=None,
+            video_features={
+                "eye_contact_ratio": 0.8,
+                "head_pose": {"pitch": 0, "yaw": 0, "roll": 0},
+                "actionUnits": {"AU09": 0.55, "AU15": 0.0, "AU01": 0.0, "AU04": 0.0},
+            },
+        )
+        assert res["emotion"] == "disgusted", f"Expected disgusted, got {res['emotion']}"
+
+        # Case 2: AU9 + AU10 geometric mean (dual markers) → disgusted
+        res = service.analyze_emotion(
+            "That is repulsive",
+            audio_features=None,
+            video_features={
+                "eye_contact_ratio": 0.8,
+                "head_pose": {"pitch": 0, "yaw": 0, "roll": 0},
+                "actionUnits": {"AU09": 0.25, "AU10": 0.30, "AU15": 0.1, "AU01": 0.0},
+            },
+        )
+        assert res["emotion"] == "disgusted", f"Expected disgusted, got {res['emotion']}"
+
+        # Case 3: AU15 alone (no AU9) → sad (not disgusted)
+        res = service.analyze_emotion(
+            "I feel really sad today",
+            audio_features=None,
+            video_features={
+                "eye_contact_ratio": 0.7,
+                "head_pose": {"pitch": 0, "yaw": 0, "roll": 0},
+                "actionUnits": {"AU15": 0.55, "AU09": 0.0, "AU01": 0.0},
+            },
+        )
+        assert res["emotion"] == "sad", f"Expected sad, got {res['emotion']}"
+
+        # Case 4: AU4+AU15 but with AU9 present → disgusted (not sad)
+        res = service.analyze_emotion(
+            "I just saw something disgusting",
+            audio_features=None,
+            video_features={
+                "eye_contact_ratio": 0.8,
+                "head_pose": {"pitch": 0, "yaw": 0, "roll": 0},
+                "actionUnits": {"AU04": 0.45, "AU15": 0.50, "AU09": 0.40, "AU01": 0.0},
+            },
+        )
+        assert res["emotion"] == "disgusted", f"Expected disgusted, got {res['emotion']}"
+
+        # Case 5: AU1+AU15 grief pattern (no AU9) → sad confirmed
+        res = service.analyze_emotion(
+            "I miss them so much",
+            audio_features=None,
+            video_features={
+                "eye_contact_ratio": 0.5,
+                "head_pose": {"pitch": 0, "yaw": 0, "roll": 0},
+                "actionUnits": {"AU01": 0.55, "AU15": 0.60, "AU09": 0.0, "AU04": 0.0},
+            },
+        )
+        assert res["emotion"] == "sad", f"Expected sad, got {res['emotion']}"
+
     def test_emotion_service_visual_overrides(self):
         from services.emotion_service import EmotionService
         
