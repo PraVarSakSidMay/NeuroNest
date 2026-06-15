@@ -186,8 +186,8 @@ class LLMService:
 
         # Defined tiers of LLM providers to try in sequence
         tiers = [
-            ("Gemini 2.0 Flash Exp (free)", "google/gemini-2.0-flash-exp:free", "or_gemini_2_flash_exp", False, 10),
-            ("Gemini Flash 1.5", "google/gemini-flash-1.5", "or_gemini_flash_1_5", False, 10),
+            ("Gemini 2.0 Flash (free)", "google/gemini-2.0-flash:free", "or_gemini_2_flash", True, 10),
+            ("Gemini Flash 1.5", "google/gemini-flash-1.5", "or_gemini_flash_1_5", True, 10),
             ("Claude 3.5 Haiku", "anthropic/claude-3.5-haiku", "or_claude_haiku", False, 12),
             ("Llama 3.3 70B", "meta-llama/llama-3.3-70b-instruct", "or_llama_70b", True, 15),
             ("Mistral Small 3.1", "mistralai/mistral-small-3.1-24b-instruct:free", "or_mistral_small", True, 12),

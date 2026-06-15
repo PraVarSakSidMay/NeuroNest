@@ -259,4 +259,4 @@ def generate_response(
     """
  
     # 11. Generate the response using the model waterfall Facade
-    return model_manager.get_llm_response(transcript, system_prompt)
+    return model_manager.get_llm_response(transcript, system_prompt, json_mode=True)
