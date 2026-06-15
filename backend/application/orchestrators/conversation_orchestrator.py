@@ -633,22 +633,24 @@ class ConversationOrchestrator:
     async def _plan_conversation(self, ctx: TurnContext):
         return await asyncio.get_event_loop().run_in_executor(
             None,
-            self._deps.planning_engine.plan_response,
-            ctx.transcript,
-            ctx.user_state,
-            ctx.memory_layers,
-            ctx.emotion_dict,
+            lambda: self._deps.planning_engine.plan_response(
+                ctx.transcript,
+                ctx.user_state,
+                ctx.memory_layers,
+                ctx.emotion_dict,
+            ),
         )
 
     async def _compile_context(self, ctx: TurnContext):
         return await asyncio.get_event_loop().run_in_executor(
             None,
-            self._deps.context_compiler.compile,
-            ctx.user_state,
-            ctx.working_memory,
-            ctx.memory_layers,
-            ctx.conversation_plan,
-            ctx.emotion_dict,
+            lambda: self._deps.context_compiler.compile(
+                user_state        = ctx.user_state,
+                working_memory    = ctx.working_memory,
+                memories          = ctx.memory_layers,
+                planner_output    = ctx.conversation_plan,
+                emotion_profile   = ctx.emotion_dict,
+            ),
         )
 
     # ═══════════════════════════════════════════════════════════════════════

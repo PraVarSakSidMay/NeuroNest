@@ -19,6 +19,7 @@ class ILLMProvider(Protocol):
         working_memory=None,
         conversation_plan=None,
         compiled_context=None,
+        rl_prompt_instructions: str = "",
     ) -> str:
         """Generate a text response based on transcript, emotion, memories, and expression history."""
         ...
