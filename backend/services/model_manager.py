@@ -219,9 +219,55 @@ class STTService:
         self._rate_tracker = rate_tracker
 
     def get_transcription(self, audio_path: str) -> str:
-        """Orchestrates the STT waterfall: OpenRouter -> Groq -> Deepgram."""
+        """Orchestrates the STT waterfall: Deepgram -> Groq -> OpenRouter."""
         
-        # --- Tier 1: OpenRouter Transcription ---
+        # --- Tier 1: Deepgram ---
+        if settings.DEEPGRAM_API_KEY and not self._rate_tracker.is_rate_limited("deepgram_stt"):
+            try:
+                from deepgram import DeepgramClient
+                client = DeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
+                with open(audio_path, "rb") as audio_file:
+                    audio_data = audio_file.read()
+                response = client.listen.v1.media.transcribe_file(
+                    request=audio_data, model="nova-2", smart_format=True, language="en"
+                )
+                transcript = response.results.channels[0].alternatives[0].transcript
+                if transcript and transcript.strip():
+                    self._rate_tracker.clear("deepgram_stt")
+                    logger.info("STT: ✅ Transcription successful from Deepgram")
+                    return transcript.strip()
+            except Exception as e:
+                if _is_rate_limit_error(e):
+                    self._rate_tracker.mark_rate_limited("deepgram_stt")
+                else:
+                    logger.warning(f"STT: Deepgram failed: {e}")
+
+        # --- Tier 2: Groq Whisper ---
+        if settings.GROQ_API_KEY and not self._rate_tracker.is_rate_limited("groq_whisper_large_v3"):
+            try:
+                logger.info("STT: Trying Groq Whisper Large V3")
+                groq_client = OpenAI(api_key=settings.GROQ_API_KEY, base_url=GROQ_BASE_URL)
+                with open(audio_path, "rb") as audio_file:
+                    response = groq_client.audio.transcriptions.create(
+                        file=(os.path.basename(audio_path), audio_file),
+                        model="whisper-large-v3",
+                        language="en",
+                        temperature=0,
+                        prompt=STT_CONTEXT_PROMPT,
+                        timeout=10,
+                    )
+                transcript = (getattr(response, "text", None) or "").strip()
+                if transcript:
+                    self._rate_tracker.clear("groq_whisper_large_v3")
+                    logger.info("STT: ✅ Transcription successful from Groq")
+                    return transcript
+            except Exception as e:
+                if _is_rate_limit_error(e):
+                    self._rate_tracker.mark_rate_limited("groq_whisper_large_v3")
+                else:
+                    logger.warning(f"STT: Groq Whisper failed: {e}")
+
+        # --- Tier 3: OpenRouter Transcription ---
         if settings.OPENROUTER_API_KEY:
             for model in ("openai/gpt-4o-mini-transcribe", "openai/whisper-large-v3-turbo"):
                 provider_key = f"openrouter_stt:{model}"
@@ -255,56 +301,13 @@ class STTService:
                     transcript = (response.json().get("text") or "").strip()
                     if transcript:
                         self._rate_tracker.clear(provider_key)
+                        logger.info(f"STT: ✅ Transcription successful from OpenRouter {model}")
                         return transcript
                 except Exception as e:
                     if _is_rate_limit_error(e):
                         self._rate_tracker.mark_rate_limited(provider_key)
                     else:
                         logger.warning(f"STT: OpenRouter {model} failed: {e}")
-
-        # --- Tier 2: Groq Whisper ---
-        if settings.GROQ_API_KEY and not self._rate_tracker.is_rate_limited("groq_whisper_large_v3"):
-            try:
-                logger.info("STT: Trying Groq Whisper Large V3")
-                groq_client = OpenAI(api_key=settings.GROQ_API_KEY, base_url=GROQ_BASE_URL)
-                with open(audio_path, "rb") as audio_file:
-                    response = groq_client.audio.transcriptions.create(
-                        file=(os.path.basename(audio_path), audio_file),
-                        model="whisper-large-v3",
-                        language="en",
-                        temperature=0,
-                        prompt=STT_CONTEXT_PROMPT,
-                        timeout=10,
-                    )
-                transcript = (getattr(response, "text", None) or "").strip()
-                if transcript:
-                    self._rate_tracker.clear("groq_whisper_large_v3")
-                    return transcript
-            except Exception as e:
-                if _is_rate_limit_error(e):
-                    self._rate_tracker.mark_rate_limited("groq_whisper_large_v3")
-                else:
-                    logger.warning(f"STT: Groq Whisper failed: {e}")
-
-        # --- Tier 3: Deepgram ---
-        if settings.DEEPGRAM_API_KEY and not self._rate_tracker.is_rate_limited("deepgram_stt"):
-            try:
-                from deepgram import DeepgramClient
-                client = DeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
-                with open(audio_path, "rb") as audio_file:
-                    audio_data = audio_file.read()
-                response = client.listen.v1.media.transcribe_file(
-                    request=audio_data, model="nova-2", smart_format=True, language="en"
-                )
-                transcript = response.results.channels[0].alternatives[0].transcript
-                if transcript and transcript.strip():
-                    self._rate_tracker.clear("deepgram_stt")
-                    return transcript.strip()
-            except Exception as e:
-                if _is_rate_limit_error(e):
-                    self._rate_tracker.mark_rate_limited("deepgram_stt")
-                else:
-                    logger.warning(f"STT: Deepgram failed: {e}")
 
         logger.error("STT: All providers exhausted.")
         return "[Inaudible or audio error]"

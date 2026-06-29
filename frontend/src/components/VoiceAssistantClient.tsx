@@ -135,18 +135,33 @@ function analyzeAudioStream(stream, onFeatures) {
 
     if (volumeSamples.length < 2) return null;
 
-    const avgVol = volumeSamples.reduce((a, b) => a + b, 0) / volumeSamples.length;
+    // Filter samples to exclude silent/low-volume frames (noise floor)
+    const voiceSamples = volumeSamples.filter(v => v > 12.0);
+    const activeVolumeSamples = voiceSamples.length >= 2 ? voiceSamples : volumeSamples;
+
+    // For pitch, we only look at frames where voice is active
+    const activePitchSamples = [];
+    for (let i = 0; i < volumeSamples.length; i++) {
+      if (volumeSamples[i] > 12.0) {
+        activePitchSamples.push(pitchSamples[i]);
+      }
+    }
+    if (activePitchSamples.length < 2) {
+      activePitchSamples.push(...pitchSamples);
+    }
+
+    const avgVol = activeVolumeSamples.reduce((a, b) => a + b, 0) / activeVolumeSamples.length;
     const volVariance =
-      volumeSamples.reduce((s, v) => s + Math.pow(v - avgVol, 2), 0) / volumeSamples.length;
+      activeVolumeSamples.reduce((s, v) => s + Math.pow(v - avgVol, 2), 0) / activeVolumeSamples.length;
     const volStdDev = Math.sqrt(volVariance);
 
-    const avgPitch = pitchSamples.reduce((a, b) => a + b, 0) / pitchSamples.length;
+    const avgPitch = activePitchSamples.reduce((a, b) => a + b, 0) / activePitchSamples.length;
     const pitchVariance =
-      pitchSamples.reduce((s, v) => s + Math.pow(v - avgPitch, 2), 0) / pitchSamples.length;
+      activePitchSamples.reduce((s, v) => s + Math.pow(v - avgPitch, 2), 0) / activePitchSamples.length;
     const pitchStdDev = Math.sqrt(pitchVariance);
 
     const loudness = avgVol / 255;
-    const jitter = volStdDev / 255;
+    const jitter = pitchStdDev / Math.max(1, avgPitch);
 
     const isTrembling = volStdDev > 18;
     const isSinging = pitchStdDev > 30 && avgVol > 40;
@@ -330,7 +345,7 @@ export default function VoiceAssistant() {
     }
     return false;
   });
-  const [videoCaptureEnabled, setVideoCaptureEnabled] = useState(false);
+  const [videoCaptureEnabled, setVideoCaptureEnabled] = useState(hasCameraConsent);
 
   // Offline Grounding States
   const [isOnline, setIsOnline] = useState(() => {
@@ -531,7 +546,6 @@ export default function VoiceAssistant() {
       return;
     }
     try {
-      setVideoCaptureEnabled(true);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
@@ -603,7 +617,6 @@ export default function VoiceAssistant() {
               recording_stopped_at: Date.now(),
             })
           : undefined;
-        setVideoCaptureEnabled(false);
 
         // Clear voice store features
         setAudioFeatures(null);
@@ -670,7 +683,6 @@ export default function VoiceAssistant() {
       mediaRecorder.start(250);
       setRecording(true);
     } catch (err) {
-      setVideoCaptureEnabled(false);
       setError("Microphone access denied. Please allow microphone access and try again.");
     }
   };

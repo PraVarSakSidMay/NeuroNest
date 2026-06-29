@@ -106,8 +106,12 @@ class EmotionService:
             stress_level = 50
             if jitter > 0.05:
                 stress_level += 15
-            if vol_std > 15.0:
+            
+            is_librosa = audio_features.get("source") == "librosa"
+            vol_threshold = 0.035 if is_librosa else 15.0
+            if vol_std > vol_threshold:
                 stress_level += 10
+                
             if pitch_std > 25.0:
                 stress_level += 10
             if is_trembling:
