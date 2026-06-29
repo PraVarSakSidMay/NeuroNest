@@ -365,7 +365,7 @@ export function useVideoEmotionDetection(
       };
       disposeResources();
     };
-  }, [enabled, videoRef, canvasRef, audioFeatures, lastContextEmotion, setVideoEmotion, setFusedEmotion, setFaceQuality, setTrackingStatus, setStoreFps, setCameraActive]);
+  }, [enabled, videoRef, videoRef.current, canvasRef, canvasRef.current, audioFeatures, lastContextEmotion, setVideoEmotion, setFusedEmotion, setFaceQuality, setTrackingStatus, setStoreFps, setCameraActive]);
 
   return { fps, trackingStatus };
 }

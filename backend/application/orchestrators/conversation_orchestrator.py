@@ -595,7 +595,14 @@ class ConversationOrchestrator:
             k               = 5,
             exclude_session = ctx.session_id,
         )
-        return memories, None
+        from services.rag_service import _relative_time
+        mapped_memories = []
+        for row in memories:
+            mapped_memories.append({
+                **row,
+                "relative_time": _relative_time(row.get("created_at", "")),
+            })
+        return mapped_memories, None
 
     async def _get_memory_layers(self, ctx: TurnContext) -> Tuple[Dict, None]:
         if not ctx.user_state:
