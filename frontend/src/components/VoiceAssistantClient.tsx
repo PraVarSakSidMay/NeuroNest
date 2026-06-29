@@ -187,18 +187,26 @@ function analyzeAudioStream(stream, onFeatures) {
     if (volumeSamples.length < 2) return null;
 
     // Filter samples to exclude silent/low-volume frames (noise floor)
-    const voiceSamples = volumeSamples.filter(v => v > 12.0);
-    const activeVolumeSamples = voiceSamples.length >= 2 ? voiceSamples : volumeSamples;
+    const voiceSamples = volumeSamples.filter(v => v > 12.0 && !isNaN(v));
+    const activeVolumeSamples = voiceSamples.length >= 2 ? voiceSamples : volumeSamples.filter(v => !isNaN(v));
+    if (activeVolumeSamples.length < 2) {
+      activeVolumeSamples.push(0.0, 0.0);
+    }
 
     // For pitch, we only look at frames where voice is active
     const activePitchSamples = [];
     for (let i = 0; i < volumeSamples.length; i++) {
-      if (volumeSamples[i] > 12.0) {
+      if (volumeSamples[i] > 12.0 && pitchSamples[i] !== undefined && !isNaN(pitchSamples[i])) {
         activePitchSamples.push(pitchSamples[i]);
       }
     }
     if (activePitchSamples.length < 2) {
-      activePitchSamples.push(...pitchSamples);
+      const validPitches = pitchSamples.filter(p => p !== undefined && !isNaN(p));
+      if (validPitches.length >= 2) {
+        activePitchSamples.push(...validPitches);
+      } else {
+        activePitchSamples.push(150.0, 150.0); // ultimate safe fallback to prevent NaN
+      }
     }
 
     const avgVol = activeVolumeSamples.reduce((a, b) => a + b, 0) / activeVolumeSamples.length;
