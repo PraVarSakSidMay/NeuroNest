@@ -103,6 +103,44 @@ function CreditsBar({ requests }) {
   );
 }
 
+function detectPitchAutocorrelation(buf, sampleRate) {
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) {
+    sum += buf[i] * buf[i];
+  }
+  const rms = Math.sqrt(sum / buf.length);
+  if (rms < 0.008) return -1; // too quiet
+
+  let r = new Float32Array(buf.length);
+  for (let i = 0; i < buf.length; i++) {
+    for (let j = 0; j < buf.length - i; j++) {
+      r[i] += buf[j] * buf[j + i];
+    }
+  }
+
+  let d = 0;
+  while (d < r.length - 1 && r[d] > r[d + 1]) {
+    d++;
+  }
+
+  let maxval = -1;
+  let maxpos = -1;
+  for (let i = d; i < r.length; i++) {
+    if (r[i] > maxval) {
+      maxval = r[i];
+      maxpos = i;
+    }
+  }
+
+  if (maxpos !== -1 && maxpos > 0) {
+    const pitch = sampleRate / maxpos;
+    if (pitch >= 75 && pitch <= 450) {
+      return pitch;
+    }
+  }
+  return -1;
+}
+
 function analyzeAudioStream(stream, onFeatures) {
   const ctx = new AudioContext();
   const analyser = ctx.createAnalyser();
@@ -124,9 +162,22 @@ function analyzeAudioStream(stream, onFeatures) {
     const rms = Math.sqrt(freqData.reduce((sum, v) => sum + v * v, 0) / freqData.length);
     volumeSamples.push(rms);
 
-    const totalPower = freqData.reduce((s, v) => s + v, 0) + 0.001;
-    const centroid = freqData.reduce((s, v, i) => s + v * i, 0) / totalPower;
-    pitchSamples.push(centroid);
+    const buf = new Float32Array(timeData.length);
+    for (let i = 0; i < timeData.length; i++) {
+      buf[i] = (timeData[i] - 128) / 128;
+    }
+
+    const pitch = detectPitchAutocorrelation(buf, ctx.sampleRate);
+    if (pitch > 0) {
+      pitchSamples.push(pitch);
+    } else {
+      const totalPower = freqData.reduce((s, v) => s + v, 0) + 0.001;
+      const centroid = freqData.reduce((s, v, i) => s + v * i, 0) / totalPower;
+      const freq = (centroid * ctx.sampleRate) / analyser.fftSize;
+      if (freq >= 75 && freq <= 450) {
+        pitchSamples.push(freq);
+      }
+    }
   }, 80);
 
   const stop = () => {
@@ -178,7 +229,7 @@ function analyzeAudioStream(stream, onFeatures) {
     if (voiceDescription.length === 0) voiceDescription.push("stable and composed voice");
 
     const features = {
-      pitch_mean: parseFloat((avgPitch * 0.5).toFixed(2)),
+      pitch_mean: parseFloat(avgPitch.toFixed(2)),
       jitter: parseFloat(jitter.toFixed(4)),
       loudness: parseFloat(loudness.toFixed(4)),
       volume_std_dev: parseFloat(volStdDev.toFixed(2)),
@@ -339,13 +390,14 @@ export default function VoiceAssistant() {
   } = useEmotionStore();
 
   // Consent local storage state
-  const [hasCameraConsent, setHasCameraConsent] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("camera_consent") === "true";
-    }
-    return false;
-  });
-  const [videoCaptureEnabled, setVideoCaptureEnabled] = useState(hasCameraConsent);
+  const [hasCameraConsent, setHasCameraConsent] = useState(false);
+  const [videoCaptureEnabled, setVideoCaptureEnabled] = useState(false);
+
+  useEffect(() => {
+    const consent = localStorage.getItem("camera_consent") === "true";
+    setHasCameraConsent(consent);
+    setVideoCaptureEnabled(consent);
+  }, []);
 
   // Offline Grounding States
   const [isOnline, setIsOnline] = useState(() => {
