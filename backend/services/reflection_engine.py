@@ -77,10 +77,11 @@ class ReflectionEngine:
         )
         
         try:
-            # Clean up JSON if necessary
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            return json.loads(response_text)
+            from core.utils import parse_robust_json
+            parsed = parse_robust_json(response_text)
+            if isinstance(parsed, list):
+                return parsed
+            return []
         except Exception as e:
             logger.error(f"Reflection: Failed to parse LLM response: {e}")
             return []

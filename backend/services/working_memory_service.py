@@ -142,9 +142,11 @@ class WorkingMemoryService:
                     system_prompt=prompt,
                     json_mode=True
                 )
-                if "```json" in response:
-                    response = response.split("```json")[1].split("```")[0].strip()
-                return json.loads(response)
+                from core.utils import parse_robust_json
+                parsed = parse_robust_json(response)
+                if isinstance(parsed, dict):
+                    return parsed
+                return {}
             except Exception as e:
                 logger.error(f"WorkingMemory: LLM extraction failed: {e}")
                 return {}

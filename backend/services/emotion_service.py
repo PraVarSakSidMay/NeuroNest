@@ -314,12 +314,8 @@ class EmotionService:
 
     def _parse_result(self, content):
         try:
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
-
-            result = json.loads(content)
+            from core.utils import parse_robust_json
+            result = parse_robust_json(content)
             required_keys = {"emotion", "stress_level", "tone", "contradiction_detected", "hidden_emotion"}
             if not isinstance(result, dict) or not required_keys.issubset(result.keys()):
                 return self._get_default_result(result if isinstance(result, dict) else {})

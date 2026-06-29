@@ -705,20 +705,12 @@ class ConversationOrchestrator:
                 ctx, critical=True, retries=MAX_RETRIES,
             )
             if ai_response:
-                raw_response = ai_response.strip()
-                if "```json" in raw_response:
-                    raw_response = raw_response.split("```json")[1].split("```")[0].strip()
-                elif "```" in raw_response:
-                    raw_response = raw_response.split("```")[1].split("```")[0].strip()
-                
-                try:
-                    parsed = json.loads(raw_response)
-                    if isinstance(parsed, dict) and "response" in parsed:
-                        ctx.ai_response = parsed["response"]
-                        ctx.working_memory_updates = parsed.get("working_memory_updates")
-                    else:
-                        ctx.ai_response = ai_response
-                except Exception:
+                from core.utils import parse_robust_json
+                parsed = parse_robust_json(ai_response)
+                if isinstance(parsed, dict) and "response" in parsed:
+                    ctx.ai_response = parsed["response"]
+                    ctx.working_memory_updates = parsed.get("working_memory_updates")
+                else:
                     ctx.ai_response = ai_response
             else:
                 ctx.ai_response = (
