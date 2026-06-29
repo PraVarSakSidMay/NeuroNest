@@ -44,7 +44,7 @@ We designed and built a low-latency, modular system that runs local frontend mac
 graph TD
     A[User Webcam & Mic] -->|Local HTML5 Stream| B[Browser Client]
     
-    subgraph Browser Client (Local Sandbox)
+    subgraph "Browser Client (Local Sandbox)"
         B --> C[MediaPipe Landmarker + TFJS]
         B --> D[Autocorrelation F0 Pitch Analyser]
         C -->|Facial Micro-Expressions FACS| E[Local Emotion Fusion Engine]
@@ -53,7 +53,7 @@ graph TD
     
     E -->|Clean Numeric Features Only| F[FastAPI Orchestrator]
     
-    subgraph Cognitive Backend
+    subgraph "Cognitive Backend"
         F --> G[Cognitive Avoidance & Contradiction Detection]
         F --> H[Dynamic Vector Database RAG]
         F --> I[RL Persona Engine]
